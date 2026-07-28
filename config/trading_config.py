@@ -59,7 +59,7 @@ MIN_LOT_SIZE = float(os.getenv("MIN_LOT_SIZE", "0.01"))
 # MODE
 # =============================================================================
 
-TRADING_MODE = os.getenv("TRADING_MODE", "demo")  # demo | live | backtest
+TRADING_MODE = os.getenv("TRADING_MODE", "live")  # live | demo | backtest
 # STRUCTURAL: demo = paper trading, live = réel, backtest = historique uniquement
 
 # =============================================================================
