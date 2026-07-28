@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
 """
-Script de lancement du bot — RÉEL par défaut.
+Script de lancement du bot — LIVE par défaut, pas de demo.
 
 Usage:
-    python scripts/start_bot.py              # Lancer en LIVE (réel)
-    python scripts/start_bot.py --demo       # Mode demo (paper trading)
-    python scripts/start_bot.py --dashboard  # Live + dashboard
+    python scripts/start_bot.py              # Lancer en LIVE
+    python scripts/start_bot.py --dashboard  # Live + dashboard web
     
 RÈGLE 8 : Ce script est dans git, pas un script temporaire.
 """
@@ -23,20 +22,14 @@ os.chdir(project_root)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Bot SMC/ICT v2 — Lancement")
-    parser.add_argument("--demo", action="store_true", help="Mode demo (paper trading)")
-    parser.add_argument("--live", action="store_true", help="Mode live (défaut)")
+    parser = argparse.ArgumentParser(description="Bot SMC/ICT v2 — LIVE")
     parser.add_argument("--dashboard", action="store_true", help="Lancer dashboard web")
     parser.add_argument("--port", type=int, default=5000, help="Port du dashboard")
     args = parser.parse_args()
     
-    # Déterminer le mode — LIVE par défaut (le bot trade en réel)
-    if args.demo:
-        os.environ["TRADING_MODE"] = "demo"
-        print("📊 MODE DEMO — Paper trading (pas d'argent réel)")
-    else:
-        os.environ["TRADING_MODE"] = "live"
-        print("🚀 MODE LIVE — TRADING RÉEL — XAUUSD/NAS100/BTCUSD")
+    # Mode LIVE — toujours
+    os.environ["TRADING_MODE"] = "live"
+    print("🚀 MODE LIVE — TRADING RÉEL — XAUUSD/NAS100/BTCUSD")
     
     # Setup logging
     os.makedirs("logs", exist_ok=True)
@@ -47,7 +40,6 @@ def main():
     logger = logging.getLogger("start_bot")
     logger.info("=" * 60)  # STRUCTURAL: 60 chars separator
     logger.info("STARTING BOT SMC/ICT v2 — LIVE")
-    logger.info(f"Mode: {os.environ.get('TRADING_MODE', 'live')}")
     logger.info("=" * 60)  # STRUCTURAL: 60 chars separator
     
     # Créer le bot

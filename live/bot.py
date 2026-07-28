@@ -91,8 +91,8 @@ class LiveBot:
     4. Gérer les trades ouverts (breakeven, trailing, close)
     5. Kill switch : arrêt automatique si perte journalière trop grande
     
-    Mode demo : paper trading (ordres envoyés sur compte demo)
-    Mode live : trading réel (ordres envoyés sur compte réel)
+    Mode live : trading réel — ordres envoyés sur le compte MT5
+    Mode backtest : simulation sur historique uniquement (pas d'ordres)
     """
     
     def __init__(self):

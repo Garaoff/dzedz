@@ -59,8 +59,8 @@ MIN_LOT_SIZE = float(os.getenv("MIN_LOT_SIZE", "0.01"))
 # MODE
 # =============================================================================
 
-TRADING_MODE = os.getenv("TRADING_MODE", "live")  # live | demo | backtest
-# STRUCTURAL: demo = paper trading, live = réel, backtest = historique uniquement
+TRADING_MODE = os.getenv("TRADING_MODE", "live")  # live | backtest
+# STRUCTURAL: live = trading réel, backtest = historique uniquement
 
 # =============================================================================
 # KILL SWITCH — Arrêt d'urgence
@@ -125,10 +125,10 @@ def validate_config():
     if MAX_RISK_PER_TRADE_PCT > ABSOLUTE_MAX_RISK_PCT:
         errors.append(f"MAX_RISK_PER_TRADE_PCT ({MAX_RISK_PER_TRADE_PCT}) > ABSOLUTE_MAX_RISK_PCT ({ABSOLUTE_MAX_RISK_PCT})")
     
-    if TRADING_MODE not in ("demo", "live", "backtest"):
-        errors.append(f"TRADING_MODE invalide: {TRADING_MODE}")
+    if TRADING_MODE not in ("live", "backtest"):
+        errors.append(f"TRADING_MODE invalide: {TRADING_MODE} — utilise live ou backtest")
     
-    if TRADING_MODE == "live" and MAX_RISK_PER_TRADE_PCT > 5:
+    if TRADING_MODE == "live" and MAX_RISK_PER_TRADE_PCT > 15:
         errors.append(f"RISQUE DANGEREUX: MAX_RISK_PER_TRADE_PCT={MAX_RISK_PER_TRADE_PCT}% en mode LIVE — max recommandé: 15%")
     
     if len(TRADING_SYMBOLS) > MAX_CONCURRENT_TRADES:
