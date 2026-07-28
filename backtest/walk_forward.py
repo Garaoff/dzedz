@@ -30,6 +30,7 @@ def run_walk_forward(
     risk_pct: float = 1.0,
     n_windows: int = WALK_FORWARD_WINDOWS,
     df_htf: Optional[pd.DataFrame] = None,
+    symbol: str = "XAUUSD",
 ) -> dict:
     """
     Walk-forward test — chaque fenêtre IS/OOS avec métriques RÉELLES.
@@ -61,12 +62,12 @@ def run_walk_forward(
         )
         
         # Backtest IS
-        engine_is = BacktestEngine(capital=capital, risk_pct=risk_pct)
+        engine_is = BacktestEngine(capital=capital, risk_pct=risk_pct, symbol=symbol)  # DYNAMIC: symbol pour pip_size/pip_value
         result_is = engine_is.run(df_is, df_htf)
         metrics_is = compute_metrics(result_is["trades"])
         
         # Backtest OOS
-        engine_oos = BacktestEngine(capital=capital, risk_pct=risk_pct)
+        engine_oos = BacktestEngine(capital=capital, risk_pct=risk_pct, symbol=symbol)  # DYNAMIC: symbol pour pip_size/pip_value
         result_oos = engine_oos.run(df_oos, df_htf)
         metrics_oos = compute_metrics(result_oos["trades"])
         

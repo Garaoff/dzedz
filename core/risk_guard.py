@@ -7,10 +7,14 @@ Aucune catégorie de setup ne peut contourner validate_risk().
 
 RÈGLE 6 : Jamais d'échec silencieux.
 Toute exception est loguée avec son message complet.
+
+RÈGLE 1 : Les paramètres par symbole (pip_size, pip_value) viennent
+de config/symbols.py — la source unique de vérité.
 """
 
 import logging
 from config.risk_config import get_max_risk_pct, get_absolute_max_risk_pct, get_min_lot_size
+from config.symbols import get_symbol_config, SymbolConfig
 
 logger = logging.getLogger(__name__)
 
@@ -27,7 +31,8 @@ def validate_risk(
     lot_size: float,
     setup_grade: str = "",
     symbol: str = "",
-    pip_value_per_lot: float = 10.0,  # STRUCTURAL: valeur par pip par lot standard (ex: EURUSD = ~10)
+    pip_size: float = 0.0001,    # STRUCTURAL: fallback si symbol non fourni — legacy EURUSD
+    pip_value_per_lot: float = 10.0,  # STRUCTURAL: fallback si symbol non fourni — legacy EURUSD
 ) -> float:
     """
     Vérifie que le risque de l'ordre est dans les limites acceptables.
@@ -35,14 +40,19 @@ def validate_risk(
     C'EST LE SEUL POINT DE PASSAGE. Aucun ordre ne doit être envoyé sans
     passer par cette fonction.
     
+    RÈGLE 1 : Les paramètres pip_size et pip_value_per_lot sont obtenus
+    via config/symbols.py si le symbole est fourni. Sinon, les fallbacks
+    legacy EURUSD sont utilisés (pour compatibilité tests existants).
+    
     Args:
         capital: Capital disponible
         entry_price: Prix d'entrée
         sl_price: Prix du stop-loss
         lot_size: Taille de la position en lots
         setup_grade: Grade du setup (ignoré pour le risque — RÈGLE 5)
-        symbol: Symbole tradé (pour le log)
-        pip_value_per_lot: Valeur en devise du compte par pip pour 1 lot standard
+        symbol: Symbole tradé (XAUUSD, NAS100, BTCUSD) — pour obtenir les params
+        pip_size: Fallback — pip_size si symbol non fourni
+        pip_value_per_lot: Fallback — pip_value si symbol non fourni
     
     Returns:
         Le lot_size validé (peut être réduit si le risque est trop élevé)
@@ -50,6 +60,15 @@ def validate_risk(
     Raises:
         RiskValidationError: Si l'ordre ne peut pas être validé même avec le lot minimum
     """
+    # RÈGLE 1 : Obtenir les paramètres par symbole si fourni
+    if symbol:
+        try:
+            sym_config = get_symbol_config(symbol)
+            pip_size = sym_config.pip_size
+            pip_value_per_lot = sym_config.pip_value_per_lot
+        except ValueError:
+            logger.warning(f"RISK_FALLBACK | reason=symbol_not_found | symbol={symbol} | using_fallback_pip_values")
+    
     if capital <= 0:
         logger.error(f"RISK_REJECT | reason=capital_invalid | capital={capital} | symbol={symbol}")
         raise RiskValidationError(f"Capital invalide: {capital}")
@@ -62,8 +81,8 @@ def validate_risk(
     # STRUCTURAL: 100 pour conversion pourcentage — mathématique, pas arbitraire
     PCT_FACTOR = 100  # STRUCTURAL: conversion fraction → pourcentage
     
-    sl_distance_pips = abs(entry_price - sl_price) / 0.0001  # DYNAMIC: conversion en pips (5-digit pricing)
-    total_risk = sl_distance_pips * pip_value_per_lot * lot_size
+    sl_distance_pips = abs(entry_price - sl_price) / pip_size  # DYNAMIC: conversion en pips via pip_size du symbole
+    total_risk = sl_distance_pips * pip_value_per_lot * lot_size  # DYNAMIC: risk = pips × pip_value × lot
     risk_pct = (total_risk / capital) * PCT_FACTOR
     
     max_risk = get_max_risk_pct()
@@ -77,7 +96,8 @@ def validate_risk(
         logger.error(
             f"RISK_REJECT | reason=absolute_max_exceeded | "
             f"risk_pct={risk_pct:.2f}% | absolute_max={absolute_max}% | "
-            f"symbol={symbol} | grade={setup_grade}"
+            f"symbol={symbol} | grade={setup_grade} | "
+            f"sl_pips={sl_distance_pips:.1f} | pip_value={pip_value_per_lot} | pip_size={pip_size}"
         )
         raise RiskValidationError(
             f"Risque absolu dépassé: {risk_pct:.2f}% > {absolute_max}% "
@@ -104,12 +124,13 @@ def validate_risk(
         logger.warning(
             f"RISK_ADJUST | before_lot={lot_size} | after_lot={adjusted_lot:.4f} | "
             f"risk_pct={risk_pct:.2f}% -> {max_risk}% | "
-            f"reason=exceeds_max_risk | symbol={symbol}"
+            f"reason=exceeds_max_risk | symbol={symbol} | pip_value={pip_value_per_lot}"
         )
         return adjusted_lot
     
     logger.info(
         f"RISK_OK | lot={lot_size} | risk_pct={risk_pct:.2f}% | "
-        f"max={max_risk}% | symbol={symbol} | grade={setup_grade}"
+        f"max={max_risk}% | symbol={symbol} | grade={setup_grade} | "
+        f"sl_pips={sl_distance_pips:.1f} | pip_value={pip_value_per_lot}"
     )
     return lot_size

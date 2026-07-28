@@ -68,7 +68,7 @@ class OrderExecutor:
                 sl_price=sltp.sl,
                 lot_size=lot_size,
                 setup_grade="",  # Le grade est ignoré par validate_risk (Règle 5)
-                symbol=signal.signal_type.value,
+                symbol=signal.signal_type.value,  # RÈGLE 1 : pip_size/pip_value par symbole
             )
         except RiskValidationError as e:
             logger.error(f"ORDER_REJECT | reason=risk_validation | error={e}", exc_info=True)

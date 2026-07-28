@@ -777,8 +777,11 @@ sl_distance_pips = |entry - SL| / PIP_SIZE
 lot_size = risk_amount / (sl_distance_pips * PIP_VALUE_PER_LOT)
 
 Où :
-  PIP_SIZE = 0.0001 (STRUCTURAL: 5-digit pricing pour la plupart des paires)
-  PIP_VALUE_PER_LOT = dépend du symbole (ex: ~10$ pour EURUSD)
+  PIP_SIZE = dépend du symbole — défini dans config/symbols.py (source unique Règle 1)
+  PIP_VALUE_PER_LOT = dépend du symbole — défini dans config/symbols.py (source unique Règle 1)
+  # XAUUSD: pip_size=0.01, pip_value=1.00, contract_size=100
+  # NAS100: pip_size=1.0, pip_value=1.00, contract_size=1
+  # BTCUSD: pip_size=0.01, pip_value=0.01, contract_size=1
 ```
 
 ## 5.2 Vérification de risque (validate_risk)
@@ -920,7 +923,8 @@ avec les mêmes plafonds qu'un setup confluence_score = 2.
 Timeframe : M1 (obligatoire pour ICT)
 Volume : réel (pas synthétique)
 Période : minimum 1 an, idéal 3+ ans
-Paires : EURUSD, GBPUSD, USDJPY minimum (liquidité suffisante)
+Symboles : XAUUSD (Or 🥇 — priorité 1), NAS100 (NASDAQ 📊), BTCUSD (Bitcoin ₿)
+XAUUSD est le plus important — pip_size=0.01, pip_value=1.00, contract_size=100
 ```
 
 ## 7.2 Processus de walk-forward
@@ -1040,11 +1044,11 @@ TOUS les logs suivent ce format structuré :
   MODULE | ACTION | key=value | key=value
 
 Exemples :
-  RISK_GUARD | RISK_OK | lot=0.05 | risk_pct=0.8% | symbol=EURUSD
+  RISK_GUARD | RISK_OK | lot=0.04 | risk_pct=0.8% | symbol=XAUUSD | pip_size=0.01 | pip_value=1.00
   SL_TP_CALC | SL_ADJUST | layer=broker | before=1.0990 | after=1.0988 | reason=min_distance
   FVG_DETECT | FVG_BULL | top=1.1050 | bottom=1.1045 | size_atr=0.5 | index=15234
   SIGNAL_DETECTED | type=liquidity_sweep_low | direction=long | confluence=4 | index=15234
-  ORDER_SENT | symbol=EURUSD | direction=long | entry=1.1045 | sl=1.1020 | tp=1.1095 | lot=0.05
+  ORDER_SENT | symbol=XAUUSD | direction=long | entry=1950.50 | sl=1948.00 | tp=1954.00 | lot=0.04 | pip_size=0.01 | pip_value=1.00
 ```
 
 ---
@@ -1078,7 +1082,9 @@ MAX_RISK_PER_TRADE_PCT = 1.0       # STRUCTURAL: 1% du capital par trade
 ABSOLUTE_MAX_RISK_PCT = 5.0        # STRUCTURAL: plafond absolu jamais dépassé
 MIN_LOT_SIZE = 0.01                 # STRUCTURAL: minimum broker
 PIP_SIZE = 0.0001                   # STRUCTURAL: 5-digit pricing
-PIP_VALUE_PER_LOT_EURUSD = 10.0    # STRUCTURAL: ~$10 par pip par lot standard EURUSD
+PIP_VALUE_PER_LOT est maintenant par symbole dans config/symbols.py (Règle 1)
+# XAUUSD: 1.00, NAS100: 1.00, BTCUSD: 0.01
+# pip_value_per_lot = pip_size × contract_size (USD-denominated instruments)
 
 # =============================================================================
 # SL/TP

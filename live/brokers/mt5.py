@@ -13,6 +13,7 @@ from typing import Optional
 
 from live.brokers.base import BrokerAdapter, OrderResult, AccountInfo, PositionInfo
 from config.trading_config import MT5_PATH, MT5_LOGIN, MT5_PASSWORD, MT5_SERVER
+from config.symbols import get_broker_format, get_contract_size
 
 logger = logging.getLogger(__name__)
 
@@ -92,8 +93,8 @@ class MT5Adapter(BrokerAdapter):
         
         mt5_tf = tf_map.get(timeframe, self.mt5.TIMEFRAME_M1)
         
-        # Convertir EUR_USD → EURUSD (MT5 format)
-        mt5_symbol = symbol.replace("_", "")
+        # RÈGLE 1 : Conversion via config/symbols.py
+        mt5_symbol = get_broker_format(symbol, "mt5")
         
         candles = self.mt5.copy_rates_from_pos(mt5_symbol, mt5_tf, 0, count)
         
@@ -118,7 +119,7 @@ class MT5Adapter(BrokerAdapter):
     
     def get_current_price(self, symbol: str) -> dict:
         """Récupère le prix actuel MT5."""
-        mt5_symbol = symbol.replace("_", "")
+        mt5_symbol = get_broker_format(symbol, "mt5")
         tick = self.mt5.symbol_info_tick(mt5_symbol)
         
         if tick is None:
@@ -130,7 +131,7 @@ class MT5Adapter(BrokerAdapter):
     def send_order(self, symbol: str, direction: str, lot: float,
                    entry_price: float, sl: float, tp: float) -> OrderResult:
         """Envoie un ordre MT5."""
-        mt5_symbol = symbol.replace("_", "")
+        mt5_symbol = get_broker_format(symbol, "mt5")
         
         if sl <= 0 or tp <= 0:
             logger.error(f"MT5_ORDER | reason=no_sl_tp | RÈGLE 5 VIOLÉE")
@@ -228,7 +229,7 @@ class MT5Adapter(BrokerAdapter):
     
     def get_open_positions(self, symbol: str = "") -> list[PositionInfo]:
         """Récupère les positions ouvertes MT5."""
-        mt5_symbol = symbol.replace("_", "") if symbol else ""
+        mt5_symbol = get_broker_format(symbol, "mt5") if symbol else ""
         
         if mt5_symbol:
             positions = self.mt5.positions_get(symbol=mt5_symbol)

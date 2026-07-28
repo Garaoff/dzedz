@@ -23,13 +23,12 @@ from core.order_block import find_ob_at_price
 from core.risk_guard import validate_risk, RiskValidationError
 from config.params import (
     MIN_TRADES_FOR_VALIDATION,
-    PIP_VALUE_PER_LOT_EURUSD,
-    PIP_SIZE,
     MAX_RISK_PER_TRADE_PCT,
     BE_TRIGGER_ATR,
     PARTIAL_CLOSE_PCT,
     CONFLUENCE_MINIMUM,
 )
+from config.symbols import get_symbol_config, get_pip_size, get_pip_value_per_lot
 
 logger = logging.getLogger(__name__)
 
@@ -66,10 +65,11 @@ class BacktestEngine:
     Si un module se comporte différemment en backtest vs live, c'est un bug.
     """
     
-    def __init__(self, capital: float, risk_pct: float = MAX_RISK_PER_TRADE_PCT):
+    def __init__(self, capital: float, risk_pct: float = MAX_RISK_PER_TRADE_PCT, symbol: str = "XAUUSD"):
         self.initial_capital = capital
         self.capital = capital
         self.risk_pct = risk_pct
+        self.symbol = symbol  # DYNAMIC: symbole tradé — paramètres depuis config/symbols.py
         self.trades: list[BacktestTrade] = []
     
     def run(
@@ -157,8 +157,7 @@ class BacktestEngine:
                     sl_price=sltp_result.sl,
                     lot_size=0.1,  # DYNAMIC: sera ajusté par validate_risk
                     setup_grade="",  # Grade ignoré (Règle 5)
-                    symbol=signal.signal_type.value,
-                    pip_value_per_lot=PIP_VALUE_PER_LOT_EURUSD,
+                    symbol=self.symbol,  # RÈGLE 1 : pip_size et pip_value par symbole
                 )
             except RiskValidationError as e:
                 logger.debug(f"BACKTEST | risk_rejected | index={i} | error={e}")
@@ -425,17 +424,13 @@ class BacktestEngine:
     
     def _calculate_pnl(self, entry: float, exit: float, lot: float, is_long: bool) -> float:
         """
-        Calcul du PnL en dollars.
+        Calcul du PnL en dollars pour le symbole configuré.
         
-        pnl = direction * (exit - entry) / PIP_SIZE * PIP_VALUE_PER_LOT * lot
+        RÈGLE 1 : Utilise config/symbols.py pour les paramètres par symbole.
+        Formule : pnl = pips × pip_value_per_lot × lot × direction
         """
-        if is_long:
-            pips = (exit - entry) / PIP_SIZE
-        else:
-            pips = (entry - exit) / PIP_SIZE
-        
-        pnl = pips * PIP_VALUE_PER_LOT_EURUSD * lot
-        return pnl
+        sym_config = get_symbol_config(self.symbol)
+        return sym_config.calculate_pnl(entry, exit, lot, is_long)
     
     def _calculate_atr(self, df: pd.DataFrame, index: int) -> float:
         """Calcul ATR à un index."""

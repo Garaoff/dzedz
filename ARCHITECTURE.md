@@ -26,6 +26,12 @@
 | Taille position | `calculate_position_size()` | `core/position_sizer.py` | `order_executor.py` | ✅ Implémenté |
 | Vérification risque | `validate_risk()` | `core/risk_guard.py` | `order_executor.py` | ✅ Implémenté |
 | Exécution ordre | `execute_order()` | `core/order_executor.py` | `bot.py` | ✅ Implémenté |
+| Config symbole | `get_symbol_config()` | `config/symbols.py` | `risk_guard.py`, `position_sizer.py`, `bot.py`, brokers | ✅ Implémenté |
+| Pip size par symbole | `get_pip_size()` | `config/symbols.py` | `risk_guard.py`, `bot.py` | ✅ Implémenté |
+| Pip value par symbole | `get_pip_value_per_lot()` | `config/symbols.py` | `risk_guard.py`, `position_sizer.py` | ✅ Implémenté |
+| Format broker | `get_broker_format()` | `config/symbols.py` | `oanda.py`, `mt5.py`, `ccxt_adapter.py` | ✅ Implémenté |
+| Contract size | `get_contract_size()` | `config/symbols.py` | `oanda.py`, `ccxt_adapter.py` | ✅ Implémenté |
+| PnL par symbole | `calculate_pnl()` | `config/symbols.py` | `backtest/engine.py` | ✅ Implémenté |
 | Auto-optimisation | `auto_optimize()` | `live/auto_optimize.py` | `bot.py` | ⬜ TODO |
 
 ## Couches de modification
@@ -78,6 +84,26 @@ data/loader.py → data/validator.py → backtest/engine.py
 
 Le backtest utilise les MÊMES modules core que le live.
 Si un module se comporte différemment en backtest vs live, c'est un bug.
+
+## Symboles tradés (3)
+
+| Symbole | pip_size | pip_value_per_lot | contract_size | OANDA format | MT5 format | CCXT format |
+|---------|----------|-------------------|---------------|--------------|------------|-------------|
+| XAUUSD (Or 🥇) | 0.01 | $1.00 | 100 | XAU_USD | XAUUSD | None (CFD) |
+| NAS100 (NASDAQ 📊) | 1.0 | $1.00 | 1 | NAS100_USD | NAS100 | None (CFD) |
+| BTCUSD (Bitcoin ₿) | 0.01 | $0.01 | 1 | BTC_USD | BTCUSD | BTC/USDT |
+
+**XAUUSD est le plus important** (priorité 1).
+
+Formule de PnL vérifiée pour chaque symbole :
+- `pnl = pips × pip_value_per_lot × lot`
+- `pips = abs(exit - entry) / pip_size`
+- `pip_value_per_lot = pip_size × contract_size` (instruments USD-denominated)
+
+Vérifications manuelles :
+- XAUUSD : 0.1 lot × $0.50 move = 50 pips × $1.00 × 0.1 = $5 = 10oz × $0.50 ✓
+- NAS100 : 1 lot × $10 move = 10 pips × $1.00 × 1.0 = $10 ✓
+- BTCUSD : 0.1 BTC × $100 move = 10000 pips × $0.01 × 0.1 = $10 ✓
 
 ## ⚠️ Score de confluence NE BYPASSE PAS le risque
 

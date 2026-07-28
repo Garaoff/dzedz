@@ -5,8 +5,9 @@ RÈGLE 5 : Tout ordre passe par risk_guard.
 RÈGLE 6 : Pas d'échec silencieux.
 RÈGLE 8 : Ce fichier est dans git, les secrets dans .env.
 RÈGLE 2 : Ce module est appelé par start_bot.py (pipeline live).
+RÈGLE 1 : Les paramètres par symbole viennent de config/symbols.py.
 
-Lance ce bot depuis scripts/start_bot.py.
+3 symboles : XAUUSD (priorité 1), NAS100 (priorité 2), BTCUSD (priorité 3)
 """
 
 import logging
@@ -19,12 +20,17 @@ from typing import Optional
 import pandas as pd
 
 from config.trading_config import (
-    TRADING_PAIR, ENTRY_TIMEFRAME, HTF_TIMEFRAME,
+    TRADING_SYMBOLS, ENTRY_TIMEFRAME, HTF_TIMEFRAME,
     TRADING_MODE, CAPITAL, LOG_LEVEL, LOG_FILE,
     MAX_DAILY_LOSS_PCT, MAX_CONCURRENT_TRADES, MAX_TRADES_PER_DAY,
+    MAX_TRADES_PER_SYMBOL_PER_DAY,
     validate_config,
 )
-from config.params import PIP_VALUE_PER_LOT_EURUSD, PIP_SIZE
+from config.params import MAX_RISK_PER_TRADE_PCT
+from config.symbols import (
+    get_symbol_config, get_pip_size, get_pip_value_per_lot,
+    get_contract_size, get_broker_format,
+)
 from live.brokers.factory import create_broker
 from live.brokers.base import BrokerAdapter, OrderResult
 from live.kill_switch import KillSwitch
@@ -32,6 +38,7 @@ from live.trade_manager import TradeManager
 from core.signal_detector import SMCPipeline
 from core.sl_tp_calculator import calculate_sl_tp
 from core.risk_guard import validate_risk, RiskValidationError
+from core.position_sizer import calculate_position_size
 from core.liquidity import find_nearest_liquidity_level
 from core.fvg import find_fvg_at_price
 from core.order_block import find_ob_at_price
@@ -39,13 +46,47 @@ from core.order_block import find_ob_at_price
 logger = logging.getLogger(__name__)
 
 
+class SymbolState:
+    """
+    État par symbole — tracking des trades et PnL pour chaque symbole.
+    
+    RÈGLE 9 : Chiffres bruts pour chaque symbole.
+    """
+    def __init__(self, symbol: str):
+        self.symbol = symbol
+        self.daily_trades = 0
+        self.daily_pnl = 0.0
+        self.total_signals = 0
+        self.total_orders_sent = 0
+        self.total_orders_rejected = 0
+        self.last_signal_time: Optional[datetime] = None
+    
+    def reset_daily(self):
+        """Reset quotidien des stats par symbole."""
+        self.daily_trades = 0
+        self.daily_pnl = 0.0
+    
+    def get_stats(self) -> dict:
+        """Stats du symbole — chiffres bruts."""
+        return {
+            "symbol": self.symbol,
+            "daily_trades": self.daily_trades,
+            "daily_pnl": self.daily_pnl,
+            "total_signals": self.total_signals,
+            "total_orders_sent": self.total_orders_sent,
+            "total_orders_rejected": self.total_orders_rejected,
+        }
+
+
 class LiveBot:
     """
     Bot de trading live — tourne en continu sur ton PC.
     
+    3 symboles : XAUUSD (le plus important), NAS100, BTCUSD
+    
     Boucle principale :
-    1. Récupérer les données du broker (M1 + H4)
-    2. Lancer le pipeline SMC (détection + confluence)
+    1. Récupérer les données du broker pour chaque symbole (M1 + H4)
+    2. Lancer le pipeline SMC pour chaque symbole
     3. Si signal → calcul SL/TP → vérifier risque → envoyer ordre
     4. Gérer les trades ouverts (breakeven, trailing, close)
     5. Kill switch : arrêt automatique si perte journalière trop grande
@@ -56,7 +97,7 @@ class LiveBot:
     
     def __init__(self):
         # Configuration
-        self.pair = TRADING_PAIR
+        self.symbols = TRADING_SYMBOLS  # DYNAMIC: depuis .env / config
         self.entry_tf = ENTRY_TIMEFRAME
         self.htf_tf = HTF_TIMEFRAME
         self.mode = TRADING_MODE
@@ -64,18 +105,25 @@ class LiveBot:
         
         # Composants
         self.broker: Optional[BrokerAdapter] = None
-        self.pipeline: Optional[SMCPipeline] = None
         self.kill_switch = KillSwitch()
         self.trade_manager = TradeManager()
         
-        # State
+        # État par symbole
+        self.symbol_states: dict[str, SymbolState] = {}
+        for sym in self.symbols:
+            self.symbol_states[sym] = SymbolState(sym)
+        
+        # Pipelines par symbole (re-initialisés chaque minute)
+        self.pipelines: dict[str, Optional[SMCPipeline]] = {}
+        
+        # State global
         self.running = False
-        self.daily_pnl = 0
+        self.daily_pnl = 0.0
         self.daily_trades = 0
         self.daily_start_capital = CAPITAL
         self.last_day = datetime.now().day
         
-        # Stats
+        # Stats global
         self.total_signals = 0
         self.total_orders_sent = 0
         self.total_orders_rejected = 0
@@ -91,7 +139,7 @@ class LiveBot:
         RÈGLE 8 : Ce code est dans git, pas un script temporaire.
         """
         logger.info("=" * 60)  # STRUCTURAL: 60 chars separator line
-        logger.info("BOT_STARTING | mode={self.mode} | pair={self.pair} | capital={self.capital}")
+        logger.info(f"BOT_STARTING | mode={self.mode} | symbols={self.symbols} | capital={self.capital}")
         logger.info("=" * 60)  # STRUCTURAL: 60 chars separator line
         
         # 1. Valider la configuration
@@ -121,7 +169,7 @@ class LiveBot:
         # 5. Boucle principale
         self.running = True
         
-        logger.info("BOT_RUNNING | entering main loop | Ctrl+C to stop")
+        logger.info(f"BOT_RUNNING | entering main loop | symbols={self.symbols} | Ctrl+C to stop")
         
         while self.running:
             try:
@@ -140,16 +188,21 @@ class LiveBot:
         """
         Boucle principale — exécutée chaque minute.
         
+        Traite TOUS les symboles dans la même boucle.
+        
         1. Check kill switch
-        2. Récupérer données
-        3. Pipeline SMC
-        4. Gérer trades ouverts
-        5. Envoyer ordre si signal
+        2. Reset quotidien
+        3. Pour chaque symbole :
+           a. Récupérer données
+           b. Pipeline SMC
+           c. Gérer trades ouverts
+           d. Envoyer ordre si signal
         """
         # === 1. Kill switch ===
         if self.kill_switch.should_stop(self.daily_pnl, self.capital, self.daily_start_capital):
-            loss_pct = daily_pnl / daily_start_capital * 100  # STRUCTURAL: conversion pct
-            logger.warning(f"KILL_SWITCH_ACTIVATED | daily_pnl={self.daily_pnl} | daily_loss_pct={loss_pct:.2f}%")
+            if self.daily_start_capital > 0:
+                loss_pct = self.daily_pnl / self.daily_start_capital * 100  # STRUCTURAL: conversion pct
+                logger.warning(f"KILL_SWITCH_ACTIVATED | daily_pnl={self.daily_pnl:.2f} | daily_loss_pct={loss_pct:.2f}%")
             self.running = False
             return
         
@@ -160,72 +213,103 @@ class LiveBot:
             self.daily_pnl = 0
             self.daily_trades = 0
             self.last_day = current_day
+            for sym, state in self.symbol_states.items():
+                state.reset_daily()
             account = self.broker.get_account_info()
             self.capital = account.capital
             self.daily_start_capital = account.capital
         
-        # === 3. Limite trades/jour ===
+        # === 3. Limite trades/jour global ===
         if self.daily_trades >= MAX_TRADES_PER_DAY:
             logger.info(f"MAX_TRADES_DAY | trades={self.daily_trades} | max={MAX_TRADES_PER_DAY} | waiting for next day")
             return
         
-        # === 4. Récupérer données ===
-        candles_m1 = self.broker.get_candles(self.pair, self.entry_tf, count=10000)  # STRUCTURAL: RÈGLE 7 — 10000 bars, pas 3000  # STRUCTURAL: RÈGLE 7 — 10000 bars, pas 3000
+        # === 4. Traiter chaque symbole ===
+        for symbol in self.symbols:
+            self._process_symbol(symbol)
+    
+    def _process_symbol(self, symbol: str) -> None:
+        """
+        Traite un symbole individuellement.
         
-        if not candles_m1 or len(candles_m1) < 100  # STRUCTURAL: minimum 100 bars for pipeline:
-            logger.warning(f"DATA_INSUFFICIENT | m1_candles={len(candles_m1) if candles_m1 else 0}")
+        1. Récupérer les données M1 + H4
+        2. Lancer le pipeline SMC
+        3. Si signal → calcul SL/TP → risque → ordre
+        4. Gérer les trades ouverts
+        """
+        state = self.symbol_states[symbol]
+        sym_config = get_symbol_config(symbol)
+        broker_format = get_broker_format(symbol, self.broker.__class__.__name__)
+        
+        # RÈGLE : Limite trades/jour par symbole
+        if state.daily_trades >= MAX_TRADES_PER_SYMBOL_PER_DAY:
+            logger.debug(f"MAX_TRADES_SYMBOL | symbol={symbol} | trades={state.daily_trades} | max={MAX_TRADES_PER_SYMBOL_PER_DAY}")
             return
         
-        # Convertir en DataFrame
+        # === Données M1 ===
+        candles_m1 = self.broker.get_candles(symbol, self.entry_tf, count=10000)  # STRUCTURAL: RÈGLE 7 — 10000 bars
+        
+        if not candles_m1 or len(candles_m1) < 100:  # STRUCTURAL: minimum 100 bars for pipeline
+            logger.warning(f"DATA_INSUFFICIENT | symbol={symbol} | m1_candles={len(candles_m1) if candles_m1 else 0}")
+            return
+        
         df_m1 = self._candles_to_dataframe(candles_m1)
         
-        # HTF données
-        candles_htf = self.broker.get_candles(self.pair, self.htf_tf, count=500)  # STRUCTURAL: 500 bougies H4 ≈ 2 mois
+        # === Données HTF ===
+        candles_htf = self.broker.get_candles(symbol, self.htf_tf, count=500)  # STRUCTURAL: 500 bougies H4 ≈ 2 mois
         
         df_htf = None
         if candles_htf and len(candles_htf) >= 5:
             df_htf = self._candles_to_dataframe(candles_htf)
         
-        # === 5. Pipeline SMC ===
-        # Re-initialiser le pipeline chaque minute avec les nouvelles données
-        # (c'est plus simple que de maintenir un state complexe)
-        self.pipeline = SMCPipeline(df_m1, df_htf)
+        # === Pipeline SMC ===
+        self.pipelines[symbol] = SMCPipeline(df_m1, df_htf)
         
         # Traiter la dernière bougie
         last_index = len(df_m1) - 1
-        signal = self.pipeline.process_bar(last_index)
+        signal = self.pipelines[symbol].process_bar(last_index)
         
         if signal is None:
-            logger.debug(f"NO_SIGNAL | index={last_index} | waiting for next bar")
+            logger.debug(f"NO_SIGNAL | symbol={symbol} | index={last_index}")
             return
         
-        self.total_signals += 1
+        state.total_signals += 1
+        state.last_signal_time = datetime.now()
         
-        # === 6. Gérer trades ouverts ===
-        self._manage_open_positions()
+        # === Gérer trades ouverts pour ce symbole ===
+        self._manage_open_positions(symbol)
         
-        # === 7. Vérifier nombre de trades concurrents ===
-        open_positions = self.broker.get_open_positions(self.pair)
-        if len(open_positions) >= MAX_CONCURRENT_TRADES:
-            logger.info(f"MAX_POSITIONS | open={len(open_positions)} | max={MAX_CONCURRENT_TRADES}")
+        # === Vérifier nombre de trades concurrents ===
+        open_positions = self.broker.get_open_positions(symbol)
+        if len(open_positions) >= 1:  # STRUCTURAL: 1 trade max par symbole ouvert
+            logger.info(f"ALREADY_OPEN | symbol={symbol} | positions={len(open_positions)}")
             return
         
-        # === 8. Calcul SL/TP ===
+        # Total positions tous symboles
+        total_open = 0
+        for sym in self.symbols:
+            total_open += len(self.broker.get_open_positions(sym))
+        if total_open >= MAX_CONCURRENT_TRADES:
+            logger.info(f"MAX_POSITIONS_GLOBAL | total={total_open} | max={MAX_CONCURRENT_TRADES}")
+            return
+        
+        # === Calcul SL/TP ===
         atr = self._calculate_atr(df_m1, last_index)
         
-        # Niveaux structurels
         dir_str = "long" if signal.direction.value == "long" else "short"
         
-        liquidity_below = find_nearest_liquidity_level(self.pipeline.liquidity_levels, signal.price, "below")
-        liquidity_above = find_nearest_liquidity_level(self.pipeline.liquidity_levels, signal.price, "above")
+        pipeline = self.pipelines[symbol]
         
-        fvg_entry = find_fvg_at_price(self.pipeline.fvgs, signal.price, dir_str)
-        ob_entry = find_ob_at_price(self.pipeline.obs, signal.price, dir_str)
+        liquidity_below = find_nearest_liquidity_level(pipeline.liquidity_levels, signal.price, "below")
+        liquidity_above = find_nearest_liquidity_level(pipeline.liquidity_levels, signal.price, "above")
+        
+        fvg_entry = find_fvg_at_price(pipeline.fvgs, signal.price, dir_str)
+        ob_entry = find_ob_at_price(pipeline.obs, signal.price, dir_str)
         
         # Swings
         swing_low = None
         swing_high = None
-        for s in [s for s in self.pipeline.swings if s.confirmed]:
+        for s in [s for s in pipeline.swings if s.confirmed]:
             if s.type == "swing_low" and s.price < signal.price:
                 swing_low = max(swing_low or 0, s.price)
             if s.type == "swing_high" and s.price > signal.price:
@@ -242,20 +326,25 @@ class LiveBot:
         )
         
         if sltp is None:
-            logger.info(f"SLTP_REJECTED | reason=rr_below_minimum | signal={signal.signal_type.value}")
+            logger.info(f"SLTP_REJECTED | symbol={symbol} | reason=rr_below_minimum | signal={signal.signal_type.value}")
+            state.total_orders_rejected += 1
             self.total_orders_rejected += 1
             return
         
-        # === 9. Vérification risque (RÈGLE 5 : VERROU) ===
-        # Calculer le lot
-        risk_pct = self.capital * MAX_RISK_PER_TRADE_PCT / 100  # DYNAMIC: depuis config
-        sl_distance_pips = abs(signal.price - sltp.sl) / PIP_SIZE
-        
-        if sl_distance_pips <= 0:
-            logger.error(f"SL_DISTANCE_ZERO | entry={signal.price} | sl={sltp.sl}")
+        # === Vérification risque (RÈGLE 5 : VERROU) ===
+        try:
+            lot_size = calculate_position_size(
+                capital=self.capital,
+                entry_price=signal.price,
+                sl_price=sltp.sl,
+                symbol=symbol,  # RÈGLE 1 : paramètres par symbole
+                risk_pct=MAX_RISK_PER_TRADE_PCT,
+            )
+        except ValueError as e:
+            logger.error(f"POSITION_SIZE_ERROR | symbol={symbol} | error={e}")
+            state.total_orders_rejected += 1
+            self.total_orders_rejected += 1
             return
-        
-        lot_size = risk_pct / (sl_distance_pips * PIP_VALUE_PER_LOT_EURUSD)
         
         try:
             validated_lot = validate_risk(
@@ -264,17 +353,17 @@ class LiveBot:
                 sl_price=sltp.sl,
                 lot_size=lot_size,
                 setup_grade="",  # Grade ignoré — RÈGLE 5
-                symbol=self.pair,
-                pip_value_per_lot=PIP_VALUE_PER_LOT_EURUSD,
+                symbol=symbol,  # RÈGLE 1 : pip_size et pip_value par symbole
             )
         except RiskValidationError as e:
-            logger.error(f"RISK_REJECTED | error={e}")
+            logger.error(f"RISK_REJECTED | symbol={symbol} | error={e}")
+            state.total_orders_rejected += 1
             self.total_orders_rejected += 1
             return
         
-        # === 10. Envoyer l'ordre au broker ===
+        # === Envoyer l'ordre au broker ===
         result = self.broker.send_order(
-            symbol=self.pair,
+            symbol=symbol,  # RÈGLE 1 : conversion format faite dans l'adapter
             direction=dir_str,
             lot=validated_lot,
             entry_price=signal.price,
@@ -284,12 +373,14 @@ class LiveBot:
         
         if result.success:
             self.total_orders_sent += 1
+            state.total_orders_sent += 1
             self.daily_trades += 1
+            state.daily_trades += 1
             
             # Enregistrer le trade dans le manager
             self.trade_manager.add_trade(
                 ticket=result.order_id,
-                symbol=self.pair,
+                symbol=symbol,
                 direction=dir_str,
                 entry_price=result.entry_price,
                 sl=sltp.sl,
@@ -300,23 +391,27 @@ class LiveBot:
             )
             
             logger.info(
-                f"ORDER_SENT | ticket={result.order_id} | direction={dir_str} | "
+                f"ORDER_SENT | symbol={symbol} | ticket={result.order_id} | direction={dir_str} | "
                 f"lot={validated_lot:.4f} | entry={result.entry_price:.5f} | "
                 f"sl={sltp.sl:.5f} | tp={sltp.tp:.5f} | "
                 f"rr={sltp.rr_ratio:.2f} | sl_method={sltp.sl_method} | tp_method={sltp.tp_method} | "
-                f"confluence={len(signal.confluences) if hasattr(signal, 'confluences') else 0}"
+                f"confluence={len(signal.confluences) if hasattr(signal, 'confluences') else 0} | "
+                f"pip_size={sym_config.pip_size} | pip_value={sym_config.pip_value_per_lot}"
             )
         else:
             self.total_orders_rejected += 1
-            logger.error(f"ORDER_REJECTED | error={result.error}")
+            state.total_orders_rejected += 1
+            logger.error(f"ORDER_REJECTED | symbol={symbol} | error={result.error}")
     
-    def _manage_open_positions(self) -> None:
+    def _manage_open_positions(self, symbol: str) -> None:
         """
-        Gère les trades ouverts — breakeven, trailing, fermeture.
+        Gère les trades ouverts pour un symbole — breakeven, trailing.
         
         RÈGLE 5 : toute modification SL passe par risk_guard.
         """
-        positions = self.broker.get_open_positions(self.pair)
+        positions = self.broker.get_open_positions(symbol)
+        sym_config = get_symbol_config(symbol)
+        pip_size = sym_config.pip_size
         
         for pos in positions:
             trade = self.trade_manager.get_trade(pos.ticket)
@@ -327,22 +422,27 @@ class LiveBot:
             # Update PnL
             trade.current_pnl = pos.pnl
             self.daily_pnl += pos.pnl - (trade.last_recorded_pnl or 0)
+            self.symbol_states[symbol].daily_pnl += pos.pnl - (trade.last_recorded_pnl or 0)
             trade.last_recorded_pnl = pos.pnl
             
             # Breakeven check
             if not trade.be_reached:
                 profit_distance = abs(pos.current_price - trade.entry_price)
-                profit_pips = profit_distance / PIP_SIZE
+                profit_pips = profit_distance / pip_size  # DYNAMIC: pip_size par symbole
                 
-                if profit_pips >= 10:  # STRUCTURAL: ~10 pips profit before BE
-                    # Déplacer SL à breakeven
+                # STRUCTURAL: ~10 pips profit before BE (ajusté pour la volatilité du symbole)
+                # XAUUSD: 10 pips = $0.10 move, NAS100: 10 pips = 10 points, BTCUSD: 10 pips = $0.10
+                # Utiliser 10 pips comme BE trigger est conservateur pour XAUUSD/BTCUSD
+                be_trigger_pips = 10  # STRUCTURAL: 10 pips de profit minimum pour BE
+                
+                if profit_pips >= be_trigger_pips:
                     new_sl = trade.entry_price
                     
                     result = self.broker.modify_position(pos.ticket, sl=new_sl)
                     if result.success:
                         trade.be_reached = True
                         trade.current_sl = new_sl
-                        logger.info(f"BE_SET | ticket={pos.ticket} | new_sl={new_sl:.5f}")
+                        logger.info(f"BE_SET | symbol={symbol} | ticket={pos.ticket} | new_sl={new_sl:.5f}")
     
     def _candles_to_dataframe(self, candles: list[dict]) -> pd.DataFrame:
         """Convertir les candles du broker en DataFrame pandas."""
@@ -403,9 +503,20 @@ class LiveBot:
         if self.broker:
             self.broker.disconnect()
         
-        # Stats finales
+        # Stats finales par symbole
+        for sym, state in self.symbol_states.items():
+            logger.info(
+                f"BOT_STATS_SYMBOL | symbol={sym} | "
+                f"signals={state.total_signals} | "
+                f"orders_sent={state.total_orders_sent} | "
+                f"orders_rejected={state.total_orders_rejected} | "
+                f"daily_pnl={state.daily_pnl:.2f} | "
+                f"daily_trades={state.daily_trades}"
+            )
+        
+        # Stats globales
         logger.info(
-            f"BOT_STATS | signals={self.total_signals} | "
+            f"BOT_STATS_GLOBAL | signals={self.total_signals} | "
             f"orders_sent={self.total_orders_sent} | "
             f"orders_rejected={self.total_orders_rejected} | "
             f"daily_pnl={self.daily_pnl:.2f} | "
@@ -416,19 +527,29 @@ class LiveBot:
     
     def get_status(self) -> dict:
         """Statut actuel du bot — pour le dashboard."""
+        symbol_stats = {}
+        for sym, state in self.symbol_states.items():
+            symbol_stats[sym] = state.get_stats()
+        
+        open_positions = 0
+        if self.broker and self.broker.is_connected():
+            for sym in self.symbols:
+                open_positions += len(self.broker.get_open_positions(sym))
+        
         return {
             "running": self.running,
             "mode": self.mode,
-            "pair": self.pair,
+            "symbols": self.symbols,
+            "symbol_stats": symbol_stats,
             "capital": self.capital,
             "daily_pnl": self.daily_pnl,
             "daily_trades": self.daily_trades,
-            "daily_loss_pct": self.daily_pnl / self.daily_start_capital * 100  # STRUCTURAL: pct conversion self.daily_start_capital > 0 else 0,
+            "daily_loss_pct": self.daily_pnl / self.daily_start_capital * 100 if self.daily_start_capital > 0 else 0,  # STRUCTURAL: 100 pour conversion pct
             "total_signals": self.total_signals,
             "total_orders_sent": self.total_orders_sent,
             "total_orders_rejected": self.total_orders_rejected,
             "kill_switch_active": self.kill_switch.is_active,
-            "open_positions": len(self.broker.get_open_positions(self.pair)) if self.broker and self.broker.is_connected() else 0,
+            "open_positions": open_positions,
         }
 
 

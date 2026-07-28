@@ -14,6 +14,7 @@ import ccxt
 
 from live.brokers.base import BrokerAdapter, OrderResult, AccountInfo, PositionInfo
 from config.trading_config import CCXT_EXCHANGE, CCXT_API_KEY, CCXT_SECRET, CCXT_TESTNET
+from config.symbols import get_broker_format, get_symbol_config, get_contract_size
 
 logger = logging.getLogger(__name__)
 
@@ -88,12 +89,17 @@ class CCXTAdapter(BrokerAdapter):
         Récupère les candles via CCXT.
         
         RÈGLE 7 : count=10000, pas 3000.
+        RÈGLE 1 : La conversion de format utilise config/symbols.py.
         
-        CCXT format : EUR/USDT (slash)
+        CCXT format : BTC/USDT (slash)
         CCXT timeframes : 1m, 5m, 15m, 1h, 4h, 1d
         """
-        # Convertir EUR_USD → EUR/USDT (CCXT format)
-        ccxt_symbol = symbol.replace("_", "/")
+        # RÈGLE 1 : Conversion via config/symbols.py
+        ccxt_symbol = get_broker_format(symbol, "ccxt")
+        
+        if not ccxt_symbol:
+            logger.error(f"CCXT_CANDLES | reason=symbol_not_available | symbol={symbol} | CCXT ne supporte pas ce symbole (CFD)")
+            return []
         
         # CCXT timeframe mapping
         tf_map = {
@@ -136,7 +142,11 @@ class CCXTAdapter(BrokerAdapter):
     
     def get_current_price(self, symbol: str) -> dict:
         """Récupère le prix actuel CCXT."""
-        ccxt_symbol = symbol.replace("_", "/")
+        ccxt_symbol = get_broker_format(symbol, "ccxt")
+        
+        if not ccxt_symbol:
+            logger.error(f"CCXT_PRICE | reason=symbol_not_available | symbol={symbol}")
+            return {"bid": 0, "ask": 0, "mid": 0}
         
         try:
             ticker = self.exchange.fetch_ticker(ccxt_symbol)
@@ -156,11 +166,16 @@ class CCXTAdapter(BrokerAdapter):
         Envoie un ordre via CCXT (spot market order).
         
         RÈGLE 5 : SL obligatoire.
+        RÈGLE 1 : Les conversions de format et lot→amount via config/symbols.py.
         
         Note: CCXT spot orders don't natively support SL/TP.
         We place the market order and set stop-loss via separate orders.
         """
-        ccxt_symbol = symbol.replace("_", "/")
+        ccxt_symbol = get_broker_format(symbol, "ccxt")
+        
+        if not ccxt_symbol:
+            logger.error(f"CCXT_ORDER | reason=symbol_not_available | symbol={symbol}")
+            return OrderResult(success=False, order_id="", entry_price=0, sl=sl, tp=tp, lot=lot, symbol=symbol, direction=direction, error=f"CCXT ne supporte pas {symbol} (CFD uniquement)")
         
         if sl <= 0:
             logger.error(f"CCXT_ORDER | reason=no_sl | RÈGLE 5 VIOLÉE")
@@ -168,10 +183,9 @@ class CCXTAdapter(BrokerAdapter):
         
         side = "buy" if direction == "long" else "sell"
         
-        # Convert lot to amount (crypto uses base currency amount)
-        # For EUR/USDT: 1 lot ≈ 100000 units — but crypto is different
-        # Use amount parameter directly
-        amount = lot  # In crypto, lot = amount in base currency
+        # RÈGLE 1 : Convertir lot → amount via contract_size du symbole
+        contract_size = get_contract_size(symbol)
+        amount = lot * contract_size  # DYNAMIC: amount en unités de base
         
         try:
             # Place market order
@@ -235,7 +249,10 @@ class CCXTAdapter(BrokerAdapter):
     
     def get_open_positions(self, symbol: str = "") -> list[PositionInfo]:
         """Récupère les ordres ouverts CCXT."""
-        ccxt_symbol = symbol.replace("_", "/") if symbol else None
+        ccxt_symbol = get_broker_format(symbol, "ccxt") if symbol else None
+        
+        if symbol and not ccxt_symbol:
+            return []  # CFD symbol — not available on CCXT
         
         try:
             orders = self.exchange.fetch_open_orders(ccxt_symbol)

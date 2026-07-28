@@ -4,6 +4,7 @@ Configuration de trading — Bot SMC/ICT v2.
 RÈGLE 5 : Le risque est centralisé ici. Aucune bypass possible.
 RÈGLE 4 : Tous les paramètres justifiés.
 RÈGLE 8 : Ce fichier est dans git, les secrets sont dans .env.
+RÈGLE 1 : Les symboles sont définis dans config/symbols.py.
 """
 
 import os
@@ -35,10 +36,13 @@ CCXT_SECRET = os.getenv("CCXT_SECRET", "")
 CCXT_TESTNET = os.getenv("CCXT_TESTNET", "true").lower() == "true"
 
 # =============================================================================
-# PAIR & TIMEFRAME
+# SYMBOLES — 3 symboles : XAUUSD, NAS100, BTCUSD
 # =============================================================================
 
-TRADING_PAIR = os.getenv("TRADING_PAIR", "EUR_USD")
+# STRUCTURAL: Les 3 symboles tradés — XAUUSD est le plus important
+# Format : liste de noms internes (config/symbols.py les convertit en format broker)
+TRADING_SYMBOLS = os.getenv("TRADING_SYMBOLS", "XAUUSD,NAS100,BTCUSD").split(",")
+
 ENTRY_TIMEFRAME = os.getenv("ENTRY_TIMEFRAME", "M1")  # STRUCTURAL: ICT nécessite M1
 HTF_TIMEFRAME = os.getenv("HTF_TIMEFRAME", "H4")     # STRUCTURAL: H4 pour biais ICT
 
@@ -63,8 +67,9 @@ TRADING_MODE = os.getenv("TRADING_MODE", "demo")  # demo | live | backtest
 # =============================================================================
 
 MAX_DAILY_LOSS_PCT = float(os.getenv("MAX_DAILY_LOSS_PCT", "3.0"))  # STRUCTURAL: arrêt si -3%/jour
-MAX_CONCURRENT_TRADES = int(os.getenv("MAX_CONCURRENT_TRADES", "3"))  # STRUCTURAL: max 3 trades ouverts
+MAX_CONCURRENT_TRADES = int(os.getenv("MAX_CONCURRENT_TRADES", "3"))  # STRUCTURAL: max 3 trades ouverts (1 par symbole)
 MAX_TRADES_PER_DAY = int(os.getenv("MAX_TRADES_PER_DAY", "10"))      # STRUCTURAL: max 10 trades/jour
+MAX_TRADES_PER_SYMBOL_PER_DAY = int(os.getenv("MAX_TRADES_PER_SYMBOL_PER_DAY", "3"))  # STRUCTURAL: max 3 trades/jour par symbole
 
 # =============================================================================
 # LOGGING
@@ -80,6 +85,8 @@ def validate_config():
     
     RÈGLE 6 : Pas d'échec silencieux — toute erreur est loguée.
     """
+    from config.symbols import get_symbol_config, is_symbol_available_on_broker
+    
     errors = []
     
     if BROKER_TYPE not in ("oanda", "mt5", "ccxt"):
@@ -103,6 +110,15 @@ def validate_config():
         if not CCXT_SECRET:
             errors.append("CCXT_SECRET manquant")
     
+    # Valider les symboles
+    for symbol in TRADING_SYMBOLS:
+        try:
+            config = get_symbol_config(symbol)
+            if not is_symbol_available_on_broker(symbol, BROKER_TYPE):
+                errors.append(f"Symbole {symbol} non disponible sur {BROKER_TYPE} — disponibles sur: {config.available_brokers}")
+        except ValueError as e:
+            errors.append(str(e))
+    
     if CAPITAL <= 0:
         errors.append(f"CAPITAL invalide: {CAPITAL}")
     
@@ -114,5 +130,8 @@ def validate_config():
     
     if TRADING_MODE == "live" and MAX_RISK_PER_TRADE_PCT > 5:
         errors.append(f"RISQUE DANGEREUX: MAX_RISK_PER_TRADE_PCT={MAX_RISK_PER_TRADE_PCT}% en mode LIVE — max recommandé: 5%")
+    
+    if len(TRADING_SYMBOLS) > MAX_CONCURRENT_TRADES:
+        errors.append(f"TRADING_SYMBOLS ({len(TRADING_SYMBOLS)}) > MAX_CONCURRENT_TRADES ({MAX_CONCURRENT_TRADES}) — risque de surcharge")
     
     return errors

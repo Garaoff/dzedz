@@ -73,12 +73,12 @@ def load_data_from_broker(pair: str, timeframe: str) -> pd.DataFrame:
     return df
 
 
-def run_simple_backtest(df: pd.DataFrame, capital: float) -> dict:
+def run_simple_backtest(df: pd.DataFrame, capital: float, symbol: str = "XAUUSD") -> dict:
     """Lance un backtest simple."""
     from backtest.engine import BacktestEngine
     from backtest.metrics import compute_metrics
     
-    engine = BacktestEngine(capital=capital)
+    engine = BacktestEngine(capital=capital, symbol=symbol)  # DYNAMIC: symbol pour pip_size/pip_value
     result = engine.run(df)
     
     metrics = compute_metrics(result["trades"])
@@ -121,11 +121,11 @@ def run_simple_backtest(df: pd.DataFrame, capital: float) -> dict:
     return {"result": result, "metrics": metrics}
 
 
-def run_walk_forward_test(df: pd.DataFrame, capital: float) -> dict:
+def run_walk_forward_test(df: pd.DataFrame, capital: float, symbol: str = "XAUUSD") -> dict:
     """Lance un walk-forward test."""
     from backtest.walk_forward import run_walk_forward
     
-    wf_result = run_walk_forward(df, capital=capital)
+    wf_result = run_walk_forward(df, capital=capital, symbol=symbol)  # DYNAMIC: symbol pour paramètres
     
     print("\n" + "=" * 60)
     print("  WALK-FORWARD TEST — Chiffres bruts par fenêtre")
@@ -160,7 +160,7 @@ def main():
     parser = argparse.ArgumentParser(description="Backtest SMC/ICT v2")
     parser.add_argument("--csv", type=str, help="Fichier CSV avec données historiques")
     parser.add_argument("--capital", type=float, default=10000, help="Capital initial")
-    parser.add_argument("--pair", type=str, default="EUR_USD", help="Pair (OANDA format)")
+    parser.add_argument("--pair", type=str, default="XAUUSD", help="Symbole (nom interne: XAUUSD, NAS100, BTCUSD)")
     parser.add_argument("--walk-forward", action="store_true", help="Walk-forward test")
     args = parser.parse_args()
     
@@ -186,9 +186,9 @@ def main():
     
     # Run backtest
     if args.walk_forward:
-        result = run_walk_forward_test(df, args.capital)
+        result = run_walk_forward_test(df, args.capital, args.pair)
     else:
-        result = run_simple_backtest(df, args.capital)
+        result = run_simple_backtest(df, args.capital, args.pair)
 
 
 if __name__ == "__main__":

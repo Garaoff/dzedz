@@ -17,8 +17,20 @@ MAX_RISK_PER_TRADE_PCT = 1.0  # STRUCTURAL: 1% du capital par trade — conserva
 ABSOLUTE_MAX_RISK_PCT = 5.0  # STRUCTURAL: plafond absolu — jamais dépassé, même par erreur de config
 MIN_LOT_SIZE = 0.01  # STRUCTURAL: minimum broker — ne peut pas être contourné
 
-PIP_SIZE = 0.0001  # STRUCTURAL: 5-digit pricing pour la plupart des paires forex
-PIP_VALUE_PER_LOT_EURUSD = 10.0  # STRUCTURAL: ~10$ par pip par lot standard EURUSD
+# RÈGLE 1 : pip_size et pip_value_per_lot sont DÉFINIS dans config/symbols.py
+# par symbole (XAUUSD, NAS100, BTCUSD). Ces valeurs ne sont PLUS hardcoded ici.
+# Utilise config.symbols.get_pip_size(symbol) et config.symbols.get_pip_value_per_lot(symbol)
+#
+# Valeurs par symbole (pour référence — la source unique est config/symbols.py) :
+#   XAUUSD : pip_size=0.01, pip_value_per_lot=1.00 (100 oz × $0.01 = $1/pip/lot)
+#   NAS100 : pip_size=1.0,  pip_value_per_lot=1.00 (1 contract × $1.00/point = $1/pip/lot)
+#   BTCUSD : pip_size=0.01, pip_value_per_lot=0.01 (1 BTC × $0.01 = $0.01/pip/lot)
+#
+# ATTENTION : ces constantes sont gardées TEMPORAIREMENT pour compatibilité
+# avec les tests existants et le backtest engine. Elles seront retirées
+# quand tous les modules seront migrés vers config/symbols.py.
+PIP_SIZE_EURUSD_LEGACY = 0.0001  # STRUCTURAL: legacy — EURUSD 5-digit pricing
+PIP_VALUE_PER_LOT_EURUSD_LEGACY = 10.0  # STRUCTURAL: legacy — EURUSD $10/pip/lot
 
 # =============================================================================
 # SL/TP

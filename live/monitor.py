@@ -38,6 +38,8 @@ HTML_TEMPLATE = """
         .stat-box .value.warning { color: #ff8800; }
         .trades { background: #1a1a2e; padding: 15px; border-radius: 8px; border: 1px solid #333; }
         .trades h3 { color: #00ff88; margin-bottom: 10px; }
+        .symbols { background: #1a1a2e; padding: 15px; border-radius: 8px; border: 1px solid #333; margin-bottom: 20px; }
+        .symbols h3 { color: #00ff88; margin-bottom: 10px; }
         .trade-row { display: grid; grid-template-columns: repeat(8, 1fr); padding: 8px; border-bottom: 1px solid #222; font-size: 13px; }
         .kill-switch { margin-top: 20px; padding: 15px; background: #2a0000; border-radius: 8px; border: 2px solid #ff0000; }
         .kill-switch.active { background: #4a0000; }
@@ -93,6 +95,20 @@ HTML_TEMPLATE = """
         </div>
     </div>
     
+    <div class="symbols">
+        <h3>Symboles : XAUUSD 🥇 | NAS100 📊 | BTCUSD ₿</h3>
+        <div id="symbol_stats">
+            <div class="trade-row">
+                <span>Symbole</span>
+                <span>Trades/j</span>
+                <span>PnL/j</span>
+                <span>Signaux</span>
+                <span>Ordres</span>
+                <span>Rejetés</span>
+            </div>
+        </div>
+    </div>
+    
     <div class="trades">
         <h3>Trades ouverts</h3>
         <div id="trades_list">
@@ -144,6 +160,23 @@ HTML_TEMPLATE = """
                     killEl.textContent = data.kill_switch_active ? '🔴 ACTIVÉ' : '🟢 SAFE';
                     killEl.className = 'status' + (data.kill_switch_active ? '' : ' safe');
                     document.getElementById('kill_reason').textContent = data.kill_switch_reason || '';
+                    
+                    // Symbols stats
+                    const symList = document.getElementById('symbol_stats');
+                    if (data.symbol_stats) {
+                        let symHtml = '<div class="trade-row"><span>Symbole</span><span>Trades/j</span><span>PnL/j</span><span>Signaux</span><span>Ordres</span><span>Rejetés</span></div>';
+                        Object.entries(data.symbol_stats).forEach(([sym, stats]) => {
+                            symHtml += `<div class="trade-row">
+                                <span>${sym}</span>
+                                <span>${stats.daily_trades}</span>
+                                <span>${stats.daily_pnl.toFixed(2)}</span>
+                                <span>${stats.total_signals}</span>
+                                <span>${stats.total_orders_sent}</span>
+                                <span>${stats.total_orders_rejected}</span>
+                            </div>`;
+                        });
+                        symList.innerHTML = symHtml;
+                    }
                     
                     // Trades
                     fetch('/api/trades')
@@ -216,6 +249,7 @@ def api_status():
         "running": status.get("running", False),
         "kill_switch_active": kill_status.get("is_active", False),
         "kill_switch_reason": kill_status.get("reason", ""),
+        "symbol_stats": status.get("symbol_stats", {}),
     })
 
 
