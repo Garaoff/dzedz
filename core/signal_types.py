@@ -13,6 +13,7 @@ from typing import Optional
 
 class SignalType(Enum):
     """Types de signaux SMC/ICT reconnus."""
+    # === Concepts ICT originaux ===
     FVG_BULL = "fvg_bull"
     FVG_BEAR = "fvg_bear"
     BOS_BULL = "bos_bull"
@@ -23,6 +24,18 @@ class SignalType(Enum):
     LIQUIDITY_SWEEP_LOW = "liquidity_sweep_low"
     OB_BULL = "ob_bull"  # Order Block
     OB_BEAR = "ob_bear"
+    
+    # === Concepts ICT avancés (v2 amélioré) ===
+    MSS_BULL = "mss_bull"  # Market Structure Shift (CHOCH + Displacement + FVG)
+    MSS_BEAR = "mss_bear"
+    BREAKER_BULL = "breaker_bull"  # Breaker Block (OB invalidé → rôle inversé)
+    BREAKER_BEAR = "breaker_bear"
+    SILVER_BULLET_LONG = "silver_bullet_long"  # Silver Bullet setup (Killzone + MSS + FVG + Sweep)
+    SILVER_BULLET_SHORT = "silver_bullet_short"
+    
+    # === PDHL (Previous Day/Week High/Low) ===
+    PDHL_SWEEP_HIGH = "pdhl_sweep_high"  # Sweep de PDH/PWH
+    PDHL_SWEEP_LOW = "pdhl_sweep_low"  # Sweep de PDL/PWL
 
 
 class SignalDirection(Enum):
@@ -47,6 +60,8 @@ class Signal:
     atr_at_signal: float  # DYNAMIC: ATR au moment du signal, sert aux calculs SL/TP
     htf_bias: Optional[str] = None  # DYNAMIC: biais timeframe supérieur
     confluences: list = field(default_factory=list)  # Autres confluences détectées
+    killzone: Optional[str] = None  # DYNAMIC: killzone active au moment du signal
+    po3_phase: Optional[str] = None  # DYNAMIC: phase PO3 au moment du signal
     
     def __post_init__(self):
         """Validation à la création."""
