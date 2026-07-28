@@ -13,6 +13,13 @@ from config.params import ABSOLUTE_MAX_RISK_PCT
 class TestRiskGuard:
     """Règle 5 : Un seul verrou, jamais de bypass."""
     
+    def test_absolute_max_risk_is_15_pct(self):
+        """
+        Le plafond absolu de risque est 15% — décision utilisateur.
+        Règle 5 : le verrou existe, la valeur est 15%.
+        """
+        assert ABSOLUTE_MAX_RISK_PCT == 15.0, f"ABSOLUTE_MAX_RISK_PCT doit être 15%, pas {ABSOLUTE_MAX_RISK_PCT}"
+    
     def test_grade_s_does_not_bypass_risk(self):
         """
         RÈGLE 5 CRITIQUE : Un setup "Grade S" ne doit PAS pouvoir
@@ -51,7 +58,7 @@ class TestRiskGuard:
     
     def test_risk_exceeds_max_gets_adjusted(self):
         """
-        Un lot qui dépasse le risque max (1%) mais reste sous l'absolu (5%)
+        Un lot qui dépasse le risque max (1%) mais reste sous l'absolu (15%)
         est ajusté, pas rejeté.
         """
         capital = 10000
@@ -59,7 +66,7 @@ class TestRiskGuard:
         sl = 1.0990  # 10 pips de SL
         
         # Avec lot=0.5: 10 pips × $10/pip × 0.5 lot = $50 = 0.5% → OK (under max 1%)
-        # Avec lot=2.0: 10 pips × $10/pip × 2.0 lot = $200 = 2% → above max 1%, below abs 5%
+        # Avec lot=2.0: 10 pips × $10/pip × 2.0 lot = $200 = 2% → above max 1%, below abs 15%
         validated_lot = validate_risk(
             capital=capital,
             entry_price=entry,

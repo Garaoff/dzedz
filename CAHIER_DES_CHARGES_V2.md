@@ -795,7 +795,7 @@ Entrée : capital, entry, SL, lot_size, setup_grade
    risk_pct = (risk_dollars / capital) * 100
 
 2. Vérifier le plafond absolu :
-   SI risk_pct > ABSOLUTE_MAX_RISK_PCT (5%):
+   SI risk_pct > ABSOLUTE_MAX_RISK_PCT (15%):
      → REJETER (RiskValidationError)
      → Aucune exception, même pour Grade S
 
@@ -1062,7 +1062,7 @@ Exemples :
 - [ ] Dépôt git initialisé ✅
 - [ ] Format de données historiques confirmé (M1 réel disponible, pas seulement M5)
 - [ ] Un seul module de calcul de SL/TP prévu dès l'architecture
-- [ ] Le plafond de risque par trade est défini une fois, dans un seul fichier de config, avec une valeur raisonnable (≤5%)
+- [ ] Le plafond de risque par trade est défini une fois, dans un seul fichier de config, avec une valeur raisonnable (≤15%)
 - [ ] Le protocole de validation (walk-forward, taille d'échantillon minimum, split IS/OOS) est écrit avant le premier backtest
 - [ ] L'ordre de développement (Phase 1→6) est accepté et respecté
 - [ ] Le format de logging structuré est défini
@@ -1079,7 +1079,7 @@ Exemples :
 # RISQUE — Règle 5
 # =============================================================================
 MAX_RISK_PER_TRADE_PCT = 1.0       # STRUCTURAL: 1% du capital par trade
-ABSOLUTE_MAX_RISK_PCT = 5.0        # STRUCTURAL: plafond absolu jamais dépassé
+ABSOLUTE_MAX_RISK_PCT = 15.0       # STRUCTURAL: plafond absolu jamais dépassé (15% — décision utilisateur)
 MIN_LOT_SIZE = 0.01                 # STRUCTURAL: minimum broker
 PIP_SIZE = 0.0001                   # STRUCTURAL: 5-digit pricing
 PIP_VALUE_PER_LOT est maintenant par symbole dans config/symbols.py (Règle 1)

@@ -14,7 +14,7 @@ Tout ajout doit être accompagné d'une justification.
 # =============================================================================
 
 MAX_RISK_PER_TRADE_PCT = 1.0  # STRUCTURAL: 1% du capital par trade — conservateur
-ABSOLUTE_MAX_RISK_PCT = 5.0  # STRUCTURAL: plafond absolu — jamais dépassé, même par erreur de config
+ABSOLUTE_MAX_RISK_PCT = 15.0  # STRUCTURAL: plafond absolu — 15% maximum (décision utilisateur), jamais dépassé même par erreur de config
 MIN_LOT_SIZE = 0.01  # STRUCTURAL: minimum broker — ne peut pas être contourné
 
 # RÈGLE 1 : pip_size et pip_value_per_lot sont DÉFINIS dans config/symbols.py

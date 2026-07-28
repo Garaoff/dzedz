@@ -52,7 +52,7 @@ HTF_TIMEFRAME = os.getenv("HTF_TIMEFRAME", "H4")     # STRUCTURAL: H4 pour biais
 
 CAPITAL = float(os.getenv("CAPITAL", "10000"))
 MAX_RISK_PER_TRADE_PCT = float(os.getenv("MAX_RISK_PER_TRADE_PCT", "1.0"))
-ABSOLUTE_MAX_RISK_PCT = float(os.getenv("ABSOLUTE_MAX_RISK_PCT", "5.0"))
+ABSOLUTE_MAX_RISK_PCT = float(os.getenv("ABSOLUTE_MAX_RISK_PCT", "15.0"))
 MIN_LOT_SIZE = float(os.getenv("MIN_LOT_SIZE", "0.01"))
 
 # =============================================================================
@@ -129,7 +129,7 @@ def validate_config():
         errors.append(f"TRADING_MODE invalide: {TRADING_MODE}")
     
     if TRADING_MODE == "live" and MAX_RISK_PER_TRADE_PCT > 5:
-        errors.append(f"RISQUE DANGEREUX: MAX_RISK_PER_TRADE_PCT={MAX_RISK_PER_TRADE_PCT}% en mode LIVE — max recommandé: 5%")
+        errors.append(f"RISQUE DANGEREUX: MAX_RISK_PER_TRADE_PCT={MAX_RISK_PER_TRADE_PCT}% en mode LIVE — max recommandé: 15%")
     
     if len(TRADING_SYMBOLS) > MAX_CONCURRENT_TRADES:
         errors.append(f"TRADING_SYMBOLS ({len(TRADING_SYMBOLS)}) > MAX_CONCURRENT_TRADES ({MAX_CONCURRENT_TRADES}) — risque de surcharge")

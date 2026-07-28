@@ -105,7 +105,7 @@ pytest tests/ -v                        # 16 tests (règles 2,3,4,5,6)
 - [x] Dépôt git initialisé
 - [x] Format M1 confirmé dans params
 - [x] Un seul module SL/TP
-- [x] Plafond risque ≤5% dans config/risk_config.py
+- [x] Plafond risque ≤15% dans config/risk_config.py
 - [x] Protocole de validation défini (walk-forward, 200 trades min, IS/OOS)
 - [ ] Données M1 réelles chargées et validées
 - [ ] Premiers tests de détection sur données réelles

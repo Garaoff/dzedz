@@ -31,7 +31,7 @@ class KillSwitch:
         self.initial_capital = capital
         self.is_active = False
         self.reason = ""
-        logger.info(f"KILL_SWITCH_INIT | capital={capital} | max_daily_loss_pct={MAX_DAILY_LOSS_PCT}%")
+        logger.info(f"KILL_SWITCH_INIT | capital={capital} | max_daily_loss_pct={MAX_DAILY_LOSS_PCT}% | absolute_max_risk=15%")  # STRUCTURAL: 15% — ABSOLUTE_MAX_RISK_PCT
     
     def should_stop(self, daily_pnl: float, capital: float, daily_start_capital: float) -> bool:
         """
