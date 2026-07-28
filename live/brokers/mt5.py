@@ -6,9 +6,20 @@ On Linux/Mac, use OANDA or CCXT instead.
 
 RÈGLE 6 : Pas d'échec silencieux.
 RÈGLE 7 : count=10000 par défaut.
+
+Le bot OUVRT AUTOMATIQUEMENT MT5 et se connecte au compte.
+Pas besoin d'ouvrir MT5 manuellement avant de lancer le bot.
+
+mt5.initialize() lance MT5 et se connecte en une seule commande :
+  - Si MT5 est déjà ouvert → se connecte directement
+  - Si MT5 est fermé → ouvre MT5 automatiquement et se connecte
+  - Login/password/server passés directement à initialize()
 """
 
 import logging
+import os
+import subprocess
+import time
 from typing import Optional
 
 from live.brokers.base import BrokerAdapter, OrderResult, AccountInfo, PositionInfo
@@ -19,7 +30,17 @@ logger = logging.getLogger(__name__)
 
 
 class MT5Adapter(BrokerAdapter):
-    """MetaTrader 5 adapter — Windows only."""
+    """
+    MetaTrader 5 adapter — Windows only.
+    
+    Le bot ouvre MT5 AUTOMATIQUEMENT et se connecte au compte.
+    Tu n'as PAS besoin d'ouvrir MT5 manuellement avant de lancer le bot.
+    
+    Flux automatique :
+    1. mt5.initialize(path, login, password, server) → ouvre MT5 + connecte
+    2. Si MT5 est déjà ouvert → se connecte au compte directement
+    3. Si MT5 est fermé → le lance et se connecte
+    """
     
     def __init__(self):
         try:
@@ -32,25 +53,183 @@ class MT5Adapter(BrokerAdapter):
         self._connected = False
     
     def connect(self) -> bool:
-        """Connexion MT5."""
-        if not self.mt5.initialize(path=MT5_PATH if MT5_PATH else None):
-            error = self.mt5.last_error()
-            logger.error(f"MT5_CONNECT | reason=initialize_failed | error={error}")
-            return False
+        """
+        Ouvre MT5 automatiquement et se connecte au compte.
         
-        if not self.mt5.login(login=MT5_LOGIN, password=MT5_PASSWORD, server=MT5_SERVER):
+        mt5.initialize() avec login/password/server :
+        - Lance MT5 si pas déjà ouvert
+        - Se connecte au compte spécifié
+        - Tout en une seule commande
+        
+        RÈGLE 6 : Pas d'échec silencieux — tout est logué.
+        """
+        # === 1. Trouver le chemin MT5 automatiquement ===
+        mt5_path = self._find_mt5_path()
+        
+        logger.info(f"MT5_CONNECT | step=find_path | path={mt5_path}")
+        
+        # === 2. initialize() — ouvre MT5 + connecte en une commande ===
+        # STRUCTURAL: mt5.initialize() avec login/password/server ouvre MT5
+        # automatiquement et se connecte au compte. Pas besoin d'ouvrir MT5 manuellement.
+        init_params = {}
+        if mt5_path:
+            init_params["path"] = mt5_path
+        
+        # Passer login/password/server directement à initialize()
+        # Cela permet à MT5 de se connecter au bon compte automatiquement
+        if MT5_LOGIN and MT5_LOGIN > 0:
+            init_params["login"] = MT5_LOGIN
+        if MT5_PASSWORD:
+            init_params["password"] = MT5_PASSWORD
+        if MT5_SERVER:
+            init_params["server"] = MT5_SERVER
+        
+        logger.info(
+            f"MT5_CONNECT | step=initialize | login={MT5_LOGIN} | "
+            f"server={MT5_SERVER} | path={mt5_path} | "
+            f"auto_open=True | auto_login=True"
+        )
+        
+        # mt5.initialize() ouvre MT5 et se connecte au compte
+        if not self.mt5.initialize(**init_params):
             error = self.mt5.last_error()
-            logger.error(f"MT5_CONNECT | reason=login_failed | login={MT5_LOGIN} | server={MT5_SERVER} | error={error}")
+            logger.error(
+                f"MT5_CONNECT | reason=initialize_failed | "
+                f"login={MT5_LOGIN} | server={MT5_SERVER} | "
+                f"path={mt5_path} | error={error}"
+            )
+            
+            # === Retry : parfois MT5 prend du temps à démarrer ===
+            logger.info("MT5_CONNECT | step=retry | waiting 5 seconds for MT5 to start...")
+            time.sleep(5)  # STRUCTURAL: 5s pour laisser MT5 démarrer
+            
+            if not self.mt5.initialize(**init_params):
+                error = self.mt5.last_error()
+                logger.error(
+                    f"MT5_CONNECT | reason=initialize_failed_retry | "
+                    f"login={MT5_LOGIN} | server={MT5_SERVER} | error={error}"
+                )
+                return False
+        
+        # === 3. Vérifier la connexion ===
+        info = self.mt5.account_info()
+        
+        if info is None:
+            error = self.mt5.last_error()
+            logger.error(
+                f"MT5_CONNECT | reason=account_info_failed | "
+                f"login={MT5_LOGIN} | server={MT5_SERVER} | error={error}"
+            )
+            # Le initialize() a réussi mais on ne peut pas lire le compte
+            # Possible : login/password incorrect
             self.mt5.shutdown()
             return False
         
         self._connected = True
-        info = self.mt5.account_info()
-        logger.info(f"MT5_CONNECT | success | login={info.login} | balance={info.balance} | server={info.server}")
+        
+        logger.info(
+            f"MT5_CONNECT | success | auto_open=True | "
+            f"login={info.login} | balance={info.balance} | "
+            f"currency={info.currency} | server={info.server} | "
+            f"leverage={info.leverage} | margin_mode={info.margin_mode}"
+        )
+        
+        # === 4. Activer les symboles dans Market Watch ===
+        self._enable_symbols()
+        
         return True
     
+    def _find_mt5_path(self) -> str:
+        """
+        Trouve le chemin de MT5 automatiquement.
+        
+        Cherche dans :
+        1. MT5_PATH du .env (si configuré)
+        2. Chemins par défaut Windows
+        
+        RÈGLE 6 : Pas d'échec silencieux — logue le chemin trouvé.
+        """
+        # Si MT5_PATH est configuré dans .env → l'utiliser
+        if MT5_PATH and os.path.exists(MT5_PATH):
+            logger.info(f"MT5_PATH | source=env | path={MT5_PATH}")
+            return MT5_PATH
+        
+        # Chercher dans les chemins par défaut Windows
+        default_paths = [
+            "C:\\Program Files\\MetaTrader 5\\terminal64.exe",
+            "C:\\Program Files (x86)\\MetaTrader 5\\terminal64.exe",
+            os.path.expandvars("%APPDATA%\\MetaTrader 5\\terminal64.exe"),
+            # Chemins pour différents brokers
+            "C:\\Program Files\\ICMarkets - MetaTrader 5\\terminal64.exe",
+            "C:\\Program Files\\Exness - MetaTrader 5\\terminal64.exe",
+            "C:\\Program Files\\FBS - MetaTrader 5\\terminal64.exe",
+            "C:\\Program Files\\XM Global - MetaTrader 5\\terminal64.exe",
+            "C:\\Program Files\\Pepperstone - MetaTrader 5\\terminal64.exe",
+            "C:\\Program Files\\RoboForex - MetaTrader 5\\terminal64.exe",
+            "C:\\Program Files\\OctaFX - MetaTrader 5\\terminal64.exe",
+        ]
+        
+        for path in default_paths:
+            if os.path.exists(path):
+                logger.info(f"MT5_PATH | source=auto_found | path={path}")
+                return path
+        
+        # Chercher dans APPDATA (MT5 installé par broker)
+        appdata = os.path.expandvars("%APPDATA%")
+        for folder in os.listdir(appdata):
+            if "MetaTrader" in folder:
+                candidate = os.path.join(appdata, folder, "terminal64.exe")
+                if os.path.exists(candidate):
+                    logger.info(f"MT5_PATH | source=appdata_scan | path={candidate}")
+                    return candidate
+        
+        logger.warning(
+            "MT5_PATH | source=not_found | MT5 non trouvé dans les chemins par défaut. "
+            "Le package MetaTrader5 va chercher automatiquement. "
+            "Si ça ne marche pas, configure MT5_PATH dans le fichier .env"
+        )
+        return ""  # STRUCTURAL: mt5.initialize() sans path cherche automatiquement
+    
+    def _enable_symbols(self) -> None:
+        """
+        Ajoute les symboles XAUUSD, NAS100, BTCUSD dans Market Watch de MT5.
+        
+        MT5 ne permet pas de récupérer les données d'un symbole
+        si il n'est pas dans le Market Watch. Cette fonction
+        l'ajoute automatiquement.
+        
+        RÈGLE 6 : Pas d'échec silencieux.
+        """
+        from config.trading_config import TRADING_SYMBOLS
+        
+        for symbol in TRADING_SYMBOLS:
+            mt5_symbol = get_broker_format(symbol, "mt5")
+            
+            # Vérifier si le symbole est déjà visible
+            info = self.mt5.symbol_info(mt5_symbol)
+            
+            if info is None:
+                logger.warning(
+                    f"MT5_SYMBOL | reason=not_available | symbol={mt5_symbol} | "
+                    f"Ce symbole n'est pas disponible sur ce compte/broker. "
+                    f"Vérifie que ton broker offre {mt5_symbol}"
+                )
+                continue
+            
+            if not info.visible:
+                # Ajouter le symbole au Market Watch
+                if self.mt5.symbol_select(mt5_symbol, True):
+                    logger.info(f"MT5_SYMBOL | action=added_to_market_watch | symbol={mt5_symbol}")
+                else:
+                    logger.error(
+                        f"MT5_SYMBOL | reason=cannot_add | symbol={mt5_symbol} | "
+                        f"Impossible d'ajouter {mt5_symbol} au Market Watch"
+                    )
+            else:
+                logger.info(f"MT5_SYMBOL | action=already_visible | symbol={mt5_symbol}")
+    
     def disconnect(self) -> None:
-        """Déconnexion MT5."""
+        """Déconnexion MT5 — MT5 reste ouvert, on juste se déconnecte."""
         self.mt5.shutdown()
         self._connected = False
         logger.info("MT5_DISCONNECT")
@@ -78,8 +257,6 @@ class MT5Adapter(BrokerAdapter):
         Récupère les candles MT5.
         
         RÈGLE 7 : count=10000, pas 3000.
-        
-        MT5 format : EURUSD (pas underscore)
         """
         # MT5 timeframe mapping
         tf_map = {
