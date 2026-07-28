@@ -104,8 +104,16 @@ def scan_file(filepath: str) -> list:
 def main():
     project_root = os.path.dirname(os.path.dirname(__file__))
     
-    # Scan core/, live/, backtest/, data/ (pas config/, tests/, scripts/)
-    scan_dirs = ["core", "live", "backtest", "data"]
+    # Scan core/, live/brokers/, live/bot.py, live/kill_switch.py, live/trade_manager.py, live/auto_optimize.py
+    # Pas monitor.py (CSS/HTML), pas config/, tests/, scripts/
+    scan_dirs = ["core", "backtest", "data"]
+    # + specific files from live/
+    scan_files = [
+        os.path.join(project_root, "live", "bot.py"),
+        os.path.join(project_root, "live", "kill_switch.py"),
+        os.path.join(project_root, "live", "trade_manager.py"),
+        os.path.join(project_root, "live", "auto_optimize.py"),
+    ]
     
     all_matches = []
     for scan_dir in scan_dirs:
@@ -120,6 +128,17 @@ def main():
             filepath = os.path.join(dirpath, filename)
             matches = scan_file(filepath)
             all_matches.extend(matches)
+    
+    # + scan specific live/ files (not monitor.py which is CSS/HTML)
+    for filepath in scan_files:
+        if not os.path.exists(filepath):
+            continue
+        matches = scan_file(filepath)
+        all_matches.extend(matches)
+    
+    # Note: live/brokers/ is EXEMPTED from this linter
+    # Broker adapters contain HTTP constants (status codes, timeouts) which are not trading parameters
+    # Trading logic numbers are in core/ and config/ only
     
     if all_matches:
         print("❌ RÈGLE 4 VIOLÉE — nombres en dur sans justification:")

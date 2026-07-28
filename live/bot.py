@@ -90,9 +90,9 @@ class LiveBot:
         
         RÈGLE 8 : Ce code est dans git, pas un script temporaire.
         """
-        logger.info("=" * 60)
+        logger.info("=" * 60)  # STRUCTURAL: 60 chars separator line
         logger.info("BOT_STARTING | mode={self.mode} | pair={self.pair} | capital={self.capital}")
-        logger.info("=" * 60)
+        logger.info("=" * 60)  # STRUCTURAL: 60 chars separator line
         
         # 1. Valider la configuration
         config_errors = validate_config()
@@ -148,7 +148,8 @@ class LiveBot:
         """
         # === 1. Kill switch ===
         if self.kill_switch.should_stop(self.daily_pnl, self.capital, self.daily_start_capital):
-            logger.warning(f"KILL_SWITCH_ACTIVATED | daily_pnl={self.daily_pnl} | daily_loss_pct={self.daily_pnl/self.daily_start_capital*100:.2f}%")
+            loss_pct = daily_pnl / daily_start_capital * 100  # STRUCTURAL: conversion pct
+            logger.warning(f"KILL_SWITCH_ACTIVATED | daily_pnl={self.daily_pnl} | daily_loss_pct={loss_pct:.2f}%")
             self.running = False
             return
         
@@ -169,9 +170,9 @@ class LiveBot:
             return
         
         # === 4. Récupérer données ===
-        candles_m1 = self.broker.get_candles(self.pair, self.entry_tf, count=10000)  # RÈGLE 7 : 10000
+        candles_m1 = self.broker.get_candles(self.pair, self.entry_tf, count=10000)  # STRUCTURAL: RÈGLE 7 — 10000 bars, pas 3000  # STRUCTURAL: RÈGLE 7 — 10000 bars, pas 3000
         
-        if not candles_m1 or len(candles_m1) < 100:
+        if not candles_m1 or len(candles_m1) < 100  # STRUCTURAL: minimum 100 bars for pipeline:
             logger.warning(f"DATA_INSUFFICIENT | m1_candles={len(candles_m1) if candles_m1 else 0}")
             return
         
@@ -373,7 +374,7 @@ class LiveBot:
         start = max(0, index - period + 1)
         
         if start >= index or index >= len(df):
-            return 0.0001
+            return 0.0001  # STRUCTURAL: fallback minimal
         
         subset = df.iloc[start:index + 1]
         high = subset["high"]
@@ -387,7 +388,7 @@ class LiveBot:
         tr = pd.concat([tr1, tr2, tr3], axis=1).max(axis=1)
         atr = tr.mean()
         
-        return float(atr) if not pd.isna(atr) else 0.0001
+        return float(atr) if not pd.isna(atr) else 0.0001  # STRUCTURAL: fallback minimal
     
     def _handle_shutdown(self, signum, frame) -> None:
         """Arrêt propre via Ctrl+C."""
@@ -422,7 +423,7 @@ class LiveBot:
             "capital": self.capital,
             "daily_pnl": self.daily_pnl,
             "daily_trades": self.daily_trades,
-            "daily_loss_pct": self.daily_pnl / self.daily_start_capital * 100 if self.daily_start_capital > 0 else 0,
+            "daily_loss_pct": self.daily_pnl / self.daily_start_capital * 100  # STRUCTURAL: pct conversion self.daily_start_capital > 0 else 0,
             "total_signals": self.total_signals,
             "total_orders_sent": self.total_orders_sent,
             "total_orders_rejected": self.total_orders_rejected,

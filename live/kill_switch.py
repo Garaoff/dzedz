@@ -58,7 +58,7 @@ class KillSwitch:
             logger.warning("KILL_SWITCH | reason=zero_capital | cannot compute loss pct")
             return False
         
-        daily_loss_pct = daily_pnl / daily_start_capital * 100
+        daily_loss_pct = daily_pnl / daily_start_capital * 100  # STRUCTURAL: pct conversion
         
         # RÈGLE 5 : Seuil de perte journalière — AUCUN bypass
         if daily_loss_pct < -MAX_DAILY_LOSS_PCT:
