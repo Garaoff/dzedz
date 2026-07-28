@@ -1,0 +1,1516 @@
+
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>APEX v10 — Live Command Center</title>
+<style>
+/* ═══════════════════════════════════════════════════════
+   TOKENS & RESET
+═══════════════════════════════════════════════════════ */
+*{margin:0;padding:0;box-sizing:border-box;-webkit-font-smoothing:antialiased}
+:root{
+  --bg0:#0c0d14;--bg1:#0f111a;--bg2:#11141f;--bg3:#171b29;--bg4:#1d2333;--bg5:#252d40;
+  --green:#00e5a0;--red:#ff3d5a;--blue:#1e90ff;--amber:#ffb800;
+  --purple:#9b59e8;--teal:#00d4c8;--orange:#ff6b35;
+  --white:#e8f4ff;--muted:#4a6a8a;--dim:#1e3550;
+  --fn:'JetBrains Mono',monospace;--fu:-apple-system,sans-serif;
+}
+body{background:var(--bg0);color:var(--white);font-family:var(--fn);font-size:11px;
+  overflow-x:hidden;height:100vh;overflow-y:auto}
+
+/* scanlines */
+body::before{content:'';position:fixed;inset:0;pointer-events:none;z-index:9997;
+  background:repeating-linear-gradient(0deg,transparent,transparent 3px,rgba(0,0,0,.025) 3px,rgba(0,0,0,.025) 4px)}
+
+/* ═══════════════════════════════════════════════════════
+   LAYOUT 3-COL
+═══════════════════════════════════════════════════════ */
+.layout{display:grid;height:100vh;
+  grid-template-rows:46px 1fr 24px;
+  grid-template-columns:200px 1fr 260px}
+header{grid-column:1/-1;grid-row:1}
+.left {grid-column:1;grid-row:2;overflow-y:auto;border-right:1px solid var(--dim)}
+.main {grid-column:2;grid-row:2;overflow-y:auto}
+.right{grid-column:3;grid-row:2;overflow-y:auto;border-left:1px solid var(--dim)}
+footer{grid-column:1/-1;grid-row:3}
+
+::-webkit-scrollbar{width:3px}::-webkit-scrollbar-thumb{background:var(--dim)}
+
+/* ═══════════════════════════════════════════════════════
+   LIVE INDICATOR
+═══════════════════════════════════════════════════════ */
+.live-ring{width:8px;height:8px;border-radius:50%;flex-shrink:0;position:relative}
+.live-ring.on{background:var(--green);box-shadow:0 0 0 0 rgba(0,229,160,.6);
+  animation:lring 1.2s ease-out infinite}
+.live-ring.off{background:var(--red)}
+@keyframes lring{0%{box-shadow:0 0 0 0 rgba(0,229,160,.6)}
+  70%{box-shadow:0 0 0 8px rgba(0,229,160,0)}100%{box-shadow:0 0 0 0 rgba(0,229,160,0)}}
+
+.conn-pill{display:flex;align-items:center;gap:5px;padding:3px 10px;border-radius:20px;
+  border:1px solid;font-size:9px;font-weight:700;letter-spacing:.1em;transition:all .3s}
+.conn-on{border-color:rgba(0,229,160,.35);color:var(--green);background:rgba(0,229,160,.07)}
+.conn-off{border-color:rgba(255,61,90,.35);color:var(--red);background:rgba(255,61,90,.07)}
+
+/* ═══════════════════════════════════════════════════════
+   HEADER
+═══════════════════════════════════════════════════════ */
+header{display:flex;align-items:center;gap:10px;padding:0 14px;
+  background:var(--bg1);border-bottom:1px solid var(--dim);
+  position:relative;overflow:hidden}
+header::after{content:'';position:absolute;bottom:0;left:0;right:0;height:1px;
+  background:linear-gradient(90deg,transparent,var(--blue),transparent);
+  animation:hsweep 5s ease-in-out infinite}
+@keyframes hsweep{0%,100%{opacity:.15;transform:scaleX(.1)}50%{opacity:.6;transform:scaleX(1)}}
+
+.logo{font-size:16px;font-weight:700;letter-spacing:.1em;
+  background:linear-gradient(135deg,var(--blue),var(--green));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent;flex-shrink:0}
+.logo sub{font-size:8px;letter-spacing:.2em;-webkit-text-fill-color:var(--muted);margin-left:2px}
+.hdiv{width:1px;height:20px;background:var(--dim);flex-shrink:0}
+.hm{display:flex;flex-direction:column;align-items:center;min-width:56px}
+.hm-l{font-size:7px;color:var(--muted);letter-spacing:.15em;text-transform:uppercase}
+.hm-v{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;margin-top:1px;
+  transition:color .3s}
+.hsp{flex:1}
+.brain-pill{display:flex;align-items:center;gap:5px;padding:3px 10px;
+  border-radius:20px;border:1px solid;font-size:9px;font-weight:700;transition:all .4s}
+.htime{font-size:12px;font-weight:700;color:var(--teal);font-variant-numeric:tabular-nums;
+  letter-spacing:.08em}
+
+/* ═══════════════════════════════════════════════════════
+   SEC LABEL
+═══════════════════════════════════════════════════════ */
+.sec{display:flex;align-items:center;justify-content:space-between;
+  padding:6px 10px 4px;font-size:7px;color:var(--muted);letter-spacing:.25em;
+  text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,.035)}
+.sbadge{font-size:8px;color:var(--blue);background:rgba(30,144,255,.1);
+  padding:1px 5px;border-radius:3px;letter-spacing:0;text-transform:none}
+.sbadge-g{background:rgba(0,229,160,.1);color:var(--green)}
+.sbadge-r{background:rgba(255,61,90,.1);color:var(--red)}
+.sbadge-p{background:rgba(155,89,232,.1);color:var(--purple)}
+
+/* ═══════════════════════════════════════════════════════
+   CARDS
+═══════════════════════════════════════════════════════ */
+.card{background:var(--bg2);border:1px solid rgba(255,255,255,.05);
+  border-radius:8px;margin:5px 8px;overflow:hidden;transition:border-color .2s}
+.card:hover{border-color:rgba(30,144,255,.12)}
+.ci{padding:9px 11px}
+
+/* ═══════════════════════════════════════════════════════
+   P&L HERO
+═══════════════════════════════════════════════════════ */
+.pnl-hero{margin:7px;padding:12px 14px;border-radius:10px;
+  background:linear-gradient(135deg,var(--bg2),rgba(30,144,255,.04));
+  border:1px solid rgba(30,144,255,.1);position:relative;overflow:hidden;
+  transition:border-color .4s,box-shadow .4s}
+.pnl-hero::before{content:'';position:absolute;top:0;left:0;right:0;height:2px;
+  background:linear-gradient(90deg,transparent,var(--blue),transparent);transition:background .4s}
+.pnl-hero.profit{border-color:rgba(0,229,160,.2);box-shadow:0 0 20px rgba(0,229,160,.06)}
+.pnl-hero.profit::before{background:linear-gradient(90deg,transparent,var(--green),transparent)}
+.pnl-hero.loss{border-color:rgba(255,61,90,.2);box-shadow:0 0 20px rgba(255,61,90,.06)}
+.pnl-hero.loss::before{background:linear-gradient(90deg,transparent,var(--red),transparent)}
+.pnl-amount{font-size:32px;font-weight:700;font-variant-numeric:tabular-nums;
+  letter-spacing:-.02em;line-height:1;margin:3px 0;transition:color .3s}
+.pnl-row{display:flex;gap:10px;flex-wrap:wrap;margin-top:7px}
+.pchip{font-size:8px;color:var(--muted)}
+.pchip b{color:var(--white);font-weight:700}
+
+/* ═══════════════════════════════════════════════════════
+   BRAIN PANEL
+═══════════════════════════════════════════════════════ */
+.bp{margin:5px 8px;border-radius:8px;border:1px solid;overflow:hidden;transition:all .5s}
+.bp-HUNTER  {border-color:rgba(0,229,160,.3);background:rgba(0,229,160,.04)}
+.bp-NORMAL  {border-color:rgba(30,144,255,.25);background:rgba(30,144,255,.04)}
+.bp-CAUTIOUS{border-color:rgba(255,184,0,.3);background:rgba(255,184,0,.04)}
+.bp-DEFENSIVE{border-color:rgba(255,61,90,.3);background:rgba(255,61,90,.04)}
+.bp-FROZEN  {border-color:rgba(155,89,232,.3);background:rgba(155,89,232,.05)}
+.bp-hdr{display:flex;align-items:center;justify-content:space-between;padding:9px 11px}
+.bp-state{font-size:16px;font-weight:700;transition:color .4s}
+.bp-desc{font-size:8px;color:var(--muted);margin-top:2px}
+.bp-score-big{font-size:20px;font-weight:700;text-align:right;transition:color .4s}
+.bp-metrics{display:grid;grid-template-columns:repeat(6,1fr);
+  border-top:1px solid rgba(255,255,255,.06)}
+.bpm{padding:6px;text-align:center;border-right:1px solid rgba(255,255,255,.04)}
+.bpm:last-child{border-right:none}
+.bpm-l{font-size:7px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+.bpm-v{font-size:11px;font-weight:700;margin-top:2px;transition:color .3s}
+/* ═══════════════════════════════════════════════════════
+   SESSION TIMELINE
+═══════════════════════════════════════════════════════ */
+.sess-bar{margin:5px 8px;padding:9px 11px;
+  background:var(--bg2);border:1px solid rgba(255,255,255,.05);border-radius:8px}
+.sess-track{display:grid;grid-template-columns:repeat(24,1fr);
+  height:9px;border-radius:2px;overflow:hidden;background:var(--bg3);margin:6px 0 3px;gap:1px}
+.sc{border-radius:1px}.sc-tok{background:rgba(0,212,200,.3)}.sc-lon{background:rgba(30,144,255,.45)}
+.sc-ov{background:rgba(255,184,0,.55)}.sc-ny{background:rgba(0,229,160,.35)}
+.sc-off{background:rgba(255,255,255,.03)}
+.sc-now{outline:2px solid rgba(255,255,255,.6);outline-offset:-1px;border-radius:1px;z-index:2}
+.sess-labels{display:flex;justify-content:space-between;font-size:7px;color:var(--dim)}
+.sess-info{display:flex;align-items:center;justify-content:space-between;margin-top:5px}
+.sess-name-big{font-size:11px;font-weight:700;color:var(--teal);transition:color .4s}
+.sess-chips{display:flex;gap:7px}
+.sc2{font-size:8px;color:var(--muted)}.sc2 b{color:var(--white)}
+
+/* ═══════════════════════════════════════════════════════
+   SYMBOLS TABLE
+═══════════════════════════════════════════════════════ */
+.sym-hdr,.sym-row{display:grid;
+  grid-template-columns:56px 66px 40px 50px 34px 40px;
+  align-items:center;gap:3px;padding:5px 10px}
+.sym-hdr{font-size:7px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase;
+  border-bottom:1px solid var(--dim)}
+.sym-row{border-bottom:1px solid rgba(255,255,255,.025);cursor:pointer;transition:background .1s}
+.sym-row:hover{background:rgba(30,144,255,.04)}
+.sym-row.xau{background:rgba(255,107,53,.04);border-left:2px solid rgba(255,107,53,.4)}
+.sym-name{font-size:12px;font-weight:700}
+.sym-price{font-size:10px;font-variant-numeric:tabular-nums;transition:color .3s}
+.sym-chg{font-size:9px;font-weight:700;font-variant-numeric:tabular-nums}
+.rp{font-size:7px;padding:2px 4px;border-radius:2px;font-weight:700;
+  letter-spacing:.06em;text-align:center;white-space:nowrap}
+.rp-bull{background:rgba(0,229,160,.12);color:var(--green)}
+.rp-bear{background:rgba(255,61,90,.12);color:var(--red)}
+.rp-range{background:rgba(30,144,255,.1);color:var(--blue)}
+.rp-hv{background:rgba(255,107,53,.15);color:var(--orange)}
+.rp-lv,.rp-dead{background:rgba(20,30,45,.5);color:var(--dim)}
+.mtf-dots{display:flex;gap:2px}.mtfd{width:5px;height:5px;border-radius:50%}
+.mtfd-b{background:var(--green)}.mtfd-s{background:var(--red)}.mtfd-n{background:var(--dim)}
+
+/* ═══════════════════════════════════════════════════════
+   RISK GAUGE
+═══════════════════════════════════════════════════════ */
+.rg{margin:5px 8px;padding:8px 11px;background:var(--bg2);
+  border:1px solid rgba(255,255,255,.05);border-radius:8px}
+.rg-top{display:flex;justify-content:space-between;align-items:center;margin-bottom:5px}
+.rg-lbl{font-size:7px;color:var(--muted);text-transform:uppercase;letter-spacing:.15em}
+.rg-val{font-size:13px;font-weight:700;font-variant-numeric:tabular-nums;transition:color .3s}
+.rg-track{height:5px;background:var(--bg3);border-radius:3px;overflow:hidden}
+.rg-fill{height:5px;border-radius:3px;
+  background:linear-gradient(90deg,var(--green),var(--amber) 60%,var(--red));
+  transition:width .5s cubic-bezier(.4,0,.2,1)}
+.rg-marks{display:flex;justify-content:space-between;font-size:7px;color:var(--dim);margin-top:2px}
+
+/* ═══════════════════════════════════════════════════════
+   TABS
+═══════════════════════════════════════════════════════ */
+.tabs{display:flex;gap:1px;padding:5px 8px 0;border-bottom:1px solid rgba(255,255,255,.04)}
+.tab{padding:5px 9px;border-radius:4px 4px 0 0;font-size:8px;font-weight:700;
+  letter-spacing:.1em;text-transform:uppercase;cursor:pointer;border:1px solid transparent;
+  border-bottom:none;color:var(--muted);background:none;font-family:var(--fn);transition:all .15s}
+.tab.on{color:var(--blue);background:rgba(30,144,255,.07);border-color:rgba(30,144,255,.15)}
+.tab:hover:not(.on){color:var(--white)}
+.tc{display:none}.tc.on{display:block}
+
+/* ═══════════════════════════════════════════════════════
+   SIGNAUX
+═══════════════════════════════════════════════════════ */
+.sig-card{margin:5px 8px;padding:9px 11px;background:var(--bg3);border-radius:8px;
+  border-left:3px solid;transition:transform .1s}
+.sig-card:hover{transform:translateX(2px)}
+.sig-buy{border-color:var(--green)}.sig-sell{border-color:var(--red)}
+.sig-top{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:5px}
+.sig-sym{font-size:13px;font-weight:700}
+.sig-dir{font-size:9px;font-weight:700;padding:2px 6px;border-radius:3px;margin-left:7px}
+.sig-dir-buy{background:rgba(0,229,160,.12);color:var(--green)}
+.sig-dir-sell{background:rgba(255,61,90,.12);color:var(--red)}
+.sig-score{font-size:21px;font-weight:700;
+  background:linear-gradient(135deg,var(--amber),var(--orange));
+  -webkit-background-clip:text;-webkit-text-fill-color:transparent}
+.sig-strats{display:flex;flex-wrap:wrap;gap:3px;margin-bottom:4px}
+.sig-st{font-size:7px;padding:2px 5px;border-radius:2px;
+  background:rgba(30,144,255,.1);color:var(--blue);border:1px solid rgba(30,144,255,.15)}
+.sig-meta{display:flex;gap:10px;font-size:8px;color:var(--muted)}
+.sig-empty{padding:22px;text-align:center;font-size:9px;color:var(--muted)}
+
+/* ═══════════════════════════════════════════════════════
+   POSITIONS
+═══════════════════════════════════════════════════════ */
+.pos-hdr,.pos-row{display:grid;
+  grid-template-columns:58px 34px 34px 50px 50px 56px 52px 24px;
+  align-items:center;gap:3px;padding:5px 10px}
+.pos-hdr{font-size:7px;color:var(--muted);letter-spacing:.1em;
+  text-transform:uppercase;border-bottom:1px solid var(--dim)}
+.pos-row{border-bottom:1px solid rgba(255,255,255,.025);transition:background .1s}
+.pos-row:hover{background:rgba(255,255,255,.02)}
+.pos-sym{font-size:11px;font-weight:700}
+.pos-type{font-size:8px;font-weight:700;padding:2px 4px;border-radius:3px}
+.pos-buy2{background:rgba(0,229,160,.12);color:var(--green)}
+.pos-sell2{background:rgba(255,61,90,.12);color:var(--red)}
+.pos-n{font-size:10px;font-variant-numeric:tabular-nums;text-align:right}
+.pos-pnl{font-size:11px;font-weight:700;font-variant-numeric:tabular-nums;
+  text-align:right;transition:color .3s}
+.pos-strat{display:flex;flex-direction:column;gap:1px}
+.pos-s-nm{font-size:7px;color:var(--blue)}
+.pos-tp-bar{height:2px;background:rgba(255,255,255,.06);border-radius:1px;overflow:hidden;margin-top:2px}
+.pos-tp-fill{height:2px;background:var(--green);border-radius:1px;transition:width .4s}
+.btn-x{width:20px;height:20px;border-radius:3px;border:1px solid rgba(255,61,90,.3);
+  background:rgba(255,61,90,.07);color:var(--red);cursor:pointer;font-size:9px;
+  display:flex;align-items:center;justify-content:center;transition:all .15s}
+.btn-x:hover{background:var(--red);color:#fff}
+.pos-empty{padding:20px;text-align:center;font-size:9px;color:var(--muted)}
+
+/* ═══════════════════════════════════════════════════════
+   COURBE DOUBLE
+═══════════════════════════════════════════════════════ */
+.chart-wrap{margin:5px 8px;padding:9px 11px;
+  background:var(--bg2);border:1px solid rgba(255,255,255,.05);border-radius:8px}
+.chart-hdr{display:flex;align-items:center;justify-content:space-between;margin-bottom:7px}
+.chart-title{font-size:8px;color:var(--muted);text-transform:uppercase;letter-spacing:.2em}
+.chart-legend{display:flex;gap:12px}
+.cleg{display:flex;align-items:center;gap:4px;font-size:8px;color:var(--muted)}
+.cleg-line{width:12px;height:2px;border-radius:1px}
+.chart-stats{display:flex;gap:12px;margin-top:5px;padding-top:5px;
+  border-top:1px solid rgba(255,255,255,.04)}
+.cs{font-size:8px;color:var(--muted)}.cs b{color:var(--white)}
+
+/* ═══════════════════════════════════════════════════════
+   STATS GRID
+═══════════════════════════════════════════════════════ */
+.stats-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:5px;margin:5px 8px}
+.stat-cell{background:var(--bg3);border:1px solid rgba(255,255,255,.05);
+  border-radius:4px;padding:7px;text-align:center}
+.stat-lbl{font-size:7px;color:var(--muted);text-transform:uppercase;letter-spacing:.1em}
+.stat-val{font-size:14px;font-weight:700;margin-top:3px;
+  font-variant-numeric:tabular-nums;transition:color .3s}
+
+/* ═══════════════════════════════════════════════════════
+═══════════════════════════════════════════════════════ */
+.row-item{display:flex;
+  gap:3px;padding:4px 10px;border-bottom:1px solid rgba(255,255,255,.025);
+  font-size:9px;align-items:center}
+.row-sub{display:flex;
+  gap:3px;padding:3px 10px;font-size:7px;color:var(--muted);
+  border-bottom:1px solid rgba(255,107,53,.1);text-transform:uppercase;letter-spacing:.1em}
+
+/* ═══════════════════════════════════════════════════════
+   TERMINAL
+═══════════════════════════════════════════════════════ */
+.terminal{margin:5px 8px;background:rgba(0,0,0,.5);
+  border:1px solid var(--dim);border-radius:8px;overflow:hidden}
+.term-hdr{padding:5px 10px;background:rgba(0,0,0,.4);border-bottom:1px solid rgba(255,255,255,.04);
+  display:flex;align-items:center;justify-content:space-between;position:sticky;top:0}
+.term-title{font-size:7px;color:var(--muted);letter-spacing:.2em;text-transform:uppercase}
+.term-body{max-height:180px;overflow-y:auto;font-size:9px;line-height:1.8}
+.log-line{padding:1px 10px;border-left:2px solid transparent}
+.log-line:hover{background:rgba(255,255,255,.02)}
+.log-ts{color:var(--dim);margin-right:5px}
+.lSUCCESS{border-color:var(--green);color:var(--green)}
+.lWARNING{border-color:var(--amber);color:var(--amber)}
+.lERROR{border-color:var(--red);color:var(--red);font-weight:700}
+.lINFO{border-color:transparent;color:#8aa8c0}
+select.lf{font-family:var(--fn);font-size:7px;background:var(--bg3);color:var(--muted);
+  border:1px solid var(--dim);border-radius:2px;padding:1px 3px}
+.btn-clr{font-family:var(--fn);font-size:7px;background:none;color:var(--muted);
+  border:1px solid var(--dim);border-radius:2px;padding:1px 5px;cursor:pointer}
+.btn-clr:hover{color:var(--white)}
+
+/* ═══════════════════════════════════════════════════════
+   COLONNE DROITE
+═══════════════════════════════════════════════════════ */
+.metrics-2{display:grid;grid-template-columns:1fr 1fr;gap:5px;margin:5px 8px}
+.mc{background:var(--bg3);border:1px solid rgba(255,255,255,.04);
+  border-radius:4px;padding:7px 9px}
+.mc-l{font-size:7px;color:var(--muted);text-transform:uppercase;letter-spacing:.12em;margin-bottom:3px}
+.mc-v{font-size:15px;font-weight:700;font-variant-numeric:tabular-nums;
+  line-height:1;transition:color .3s}
+.mc-bar{height:2px;background:rgba(255,255,255,.05);border-radius:1px;margin-top:4px;overflow:hidden}
+.mc-bf{height:2px;border-radius:1px;transition:width .5s,background .3s}
+
+/* Rankings */
+.rank-hdr,.rank-row{display:grid;
+  grid-template-columns:18px 1fr 36px 46px 32px;
+  align-items:center;gap:5px;padding:5px 10px}
+.rank-hdr{font-size:7px;color:var(--muted);letter-spacing:.1em;
+  text-transform:uppercase;border-bottom:1px solid var(--dim)}
+.rank-row{border-bottom:1px solid rgba(255,255,255,.025);transition:background .1s}
+.rank-row:hover{background:rgba(255,255,255,.02)}
+.rank-n{font-size:9px;color:var(--dim);text-align:center}
+.rank-name{font-size:10px;font-weight:600}
+.rank-wr-bar{height:2px;background:var(--bg3);border-radius:1px;margin-top:2px}
+.rank-wr-fill{height:2px;border-radius:1px;transition:width .4s,background .3s}
+.rank-num{font-size:9px;font-variant-numeric:tabular-nums;text-align:right}
+
+/* Actions */
+.action-grid{display:grid;grid-template-columns:1fr 1fr;gap:5px;padding:5px 8px}
+.abtn{padding:7px;border-radius:4px;border:1px solid;background:none;cursor:pointer;
+  font-family:var(--fn);font-size:8px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;display:flex;align-items:center;justify-content:center;
+  gap:4px;transition:all .15s}
+.abtn-ok  {border-color:rgba(0,229,160,.3);color:var(--green)}
+.abtn-ok:hover{background:rgba(0,229,160,.12)}
+.abtn-info{border-color:rgba(30,144,255,.3);color:var(--blue)}
+.abtn-info:hover{background:rgba(30,144,255,.1)}
+.abtn-warn{border-color:rgba(255,184,0,.3);color:var(--amber)}
+.abtn-warn:hover{background:rgba(255,184,0,.08)}
+.abtn-kill{grid-column:1/-1;padding:8px;border-radius:4px;
+  border:1px solid rgba(255,61,90,.35);color:var(--red);background:rgba(255,61,90,.05);
+  cursor:pointer;font-family:var(--fn);font-size:9px;font-weight:700;letter-spacing:.15em;
+  text-transform:uppercase;display:flex;align-items:center;justify-content:center;
+  gap:5px;transition:all .2s;overflow:hidden;position:relative}
+.abtn-kill:hover{background:rgba(255,61,90,.15);box-shadow:0 0 15px rgba(255,61,90,.2)}
+
+/* ═══════════════════════════════════════════════════════
+   STATUS BAR
+═══════════════════════════════════════════════════════ */
+footer{background:var(--bg1);border-top:1px solid var(--dim);
+  display:flex;align-items:center;padding:0 14px;gap:12px;font-size:8px;color:var(--muted)}
+.sb-dot{width:4px;height:4px;border-radius:50%;flex-shrink:0;transition:background .3s}
+.sb-sep{width:1px;height:11px;background:var(--dim);flex-shrink:0}
+.ticker-wrap{flex:1;overflow:hidden;
+  mask-image:linear-gradient(90deg,transparent,black 3%,black 97%,transparent)}
+.ticker{display:flex;gap:18px;animation:tick 40s linear infinite;white-space:nowrap}
+@keyframes tick{from{transform:translateX(0)}to{transform:translateX(-50%)}}
+.ti{display:flex;align-items:center;gap:4px}
+.ti-sym{font-weight:700;color:var(--white)}
+
+/* ═══════════════════════════════════════════════════════
+   TOAST + MODAL
+═══════════════════════════════════════════════════════ */
+#toasts{position:fixed;top:53px;right:11px;z-index:9999;
+  display:flex;flex-direction:column;gap:5px;max-width:260px}
+.toast{padding:7px 13px;border-radius:8px;border-left:3px solid;
+  font-size:9px;backdrop-filter:blur(6px);
+  animation:tin .2s ease;pointer-events:none}
+@keyframes tin{from{opacity:0;transform:translateX(12px)}to{opacity:1;transform:none}}
+.t-ok{background:rgba(0,229,160,.12);border-color:var(--green);color:var(--green)}
+.t-err{background:rgba(255,61,90,.12);border-color:var(--red);color:var(--red)}
+.t-info{background:rgba(30,144,255,.1);border-color:var(--blue);color:var(--blue)}
+.modal-bg{display:none;position:fixed;inset:0;background:rgba(0,0,0,.75);
+  z-index:9000;align-items:center;justify-content:center;backdrop-filter:blur(4px)}
+.modal-bg.open{display:flex}
+.modal-box{background:var(--bg2);border:1px solid rgba(255,61,90,.3);
+  border-radius:10px;padding:22px;max-width:280px;width:90%}
+.modal-title{font-size:12px;font-weight:700;color:var(--red);margin-bottom:6px}
+.modal-body{font-size:9px;color:var(--muted);margin-bottom:14px;line-height:1.7}
+.modal-btns{display:flex;gap:7px}
+.mbtn{flex:1;padding:7px;border-radius:4px;border:1px solid;cursor:pointer;
+  font-family:var(--fn);font-size:8px;font-weight:700;letter-spacing:.1em;
+  text-transform:uppercase;background:none;transition:all .15s}
+
+/* utils */
+.green{color:var(--green)}.red{color:var(--red)}.blue{color:var(--blue)}
+.amber{color:var(--amber)}.purple{color:var(--purple)}.teal{color:var(--teal)}
+.orange{color:var(--orange)}.muted{color:var(--muted)}.bold{font-weight:700}
+.tr{text-align:right}.tc2{text-align:center}.fnv{font-variant-numeric:tabular-nums}
+</style>
+<script>
+// [S]️ FALLBACKS — définis EN PREMIER pour que les onclick HTML
+// ne crashent jamais, même si le script principal a un bug.
+window.smcToggleAutoTrade = window.smcToggleAutoTrade || async function() {
+  try { await fetch('/api/smc/auto_trade', {method:'POST',
+    headers:{'Content-Type':'application/json'},
+    body:JSON.stringify({action:'toggle'})}); }
+  catch(e){ console.warn('fallback smcToggleAutoTrade:', e); }
+};
+window.smcTakeNow = window.smcTakeNow || async function(){
+  const btn=document.getElementById('smc-take-now-btn');
+  if(btn){btn.disabled=true;btn.textContent='⏳';}
+  try{
+    const r=await fetch('/api/smc/take_now',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({})});
+    const d=await r.json();
+    if(typeof toast==='function')toast(d.ok?'✅ '+(d.message||'OK'):'❌ '+(d.error||'Erreur'),d.ok?'green':'red');
+  }catch(e){console.warn(e);}
+  if(btn){btn.disabled=false;btn.textContent='⚡ Prendre';}
+}
+window.smcTakeNow_legacy = window.smcTakeNow_legacy || async function() {
+  try {
+    const sym = (window._chartSym || 'XAUUSD');
+    if (!confirm('Envoyer ce trade SMC ?')) return;
+    await fetch('/api/smc/take_now', {method:'POST',
+      headers:{'Content-Type':'application/json'},
+      body:JSON.stringify({symbol:sym})});
+  } catch(e){ console.warn('fallback smcTakeNow:', e); }
+};
+// [S]️ Fallback chartLoad — au cas où le script principal crasherait
+window.chartLoad = window.chartLoad || async function() {
+  console.warn('chartLoad fallback appelé (script principal pas encore chargé)');
+};
+window.toggleCompactMode = window.toggleCompactMode || function(){};
+window._switchToSymbol = window._switchToSymbol || function(s){
+  try { window._chartSym = s; if (typeof chartLoad === 'function') chartLoad(); } catch(e){}
+};
+</script>
+
+<style>
+/* --- MASQUER LES PANNEAUX INUTILES POUR APEX V10 PRO --- */
+#bp { display: none !important; } /* Profil Brain */
+#sess-panel { display: none !important; } /* Session */
+#multi-setups-panel { display: none !important; } /* Top Setups Multi-Symbole */
+.panel:has(h2:contains("🏆 Stratégies")) { display: none !important; }
+.panel:has(h2:contains("🎯 Pro Zones")) { display: none !important; }
+.panel:has(h2:contains("🌐 Top Setups")) { display: none !important; }
+</style>
+</head>
+<body>
+
+<div id="toasts"></div>
+<div class="modal-bg" id="modal">
+  <div class="modal-box">
+    <div class="modal-title" id="modal-title">Confirmer</div>
+    <div class="modal-body"  id="modal-body">Êtes-vous sûr ?</div>
+    <div class="modal-btns">
+      <button class="mbtn" style="border-color:var(--dim);color:var(--muted)"
+        onclick="closeModal()">Annuler</button>
+      <button class="mbtn" id="modal-ok"
+        style="border-color:rgba(255,61,90,.4);color:var(--red)">Confirmer</button>
+    </div>
+  </div>
+</div>
+
+<div class="layout">
+
+<!-- ═══ HEADER ═════════════════════════════════════════ -->
+<header>
+  <div class="logo">APEX<sub>v10</sub></div>
+  <div class="hdiv"></div>
+  <div class="hm"><div class="hm-l">Solde</div>
+    <div class="hm-v green" id="h-bal">Chargement...</div></div>
+  <div class="hm"><div class="hm-l">Équité</div>
+    <div class="hm-v" id="h-eq">—</div></div>
+  <div class="hm"><div class="hm-l">P&L float.</div>
+    <div class="hm-v" id="h-pnl">—</div></div>
+  <div class="hm"><div class="hm-l">Risk %</div>
+    <div class="hm-v teal" id="h-risk">—</div></div>
+  <div class="hdiv"></div>
+  <div class="hm"><div class="hm-l">W / L</div>
+    <div class="hm-v"><span class="green" id="h-w">0</span>
+      <span class="muted">/</span><span class="red" id="h-l">0</span></div></div>
+  <div class="hm"><div class="hm-l">Contexte</div>
+    <div class="hm-v blue" style="font-size:9px" id="h-ctx">—</div></div>
+  <div class="hdiv"></div>
+  <div class="brain-pill" id="h-brain"
+       style="border-color:rgba(30,144,255,.3);color:var(--blue)">
+    <span id="h-brain-e">⚖️</span>
+    <span id="h-brain-s">NORMAL</span>
+  </div>
+  <div class="hsp"></div>
+  <div class="htime" id="h-time">00:00:00</div>
+  <div class="hdiv"></div>
+  <div class="conn-pill conn-off" id="h-conn">
+    <div class="live-ring off" id="h-ring"></div>
+    <span id="h-conn-txt">OFFLINE</span>
+  </div>
+</header>
+
+<!-- ═══ COLONNE GAUCHE ══════════════════════════════════ -->
+<div class="left">
+
+  <!-- 🎯 État Live (remplace l'ancien panneau SCALP) -->
+  <div style="margin:5px 8px;border:1px solid rgba(56,189,248,.25);
+       border-radius:8px;background:rgba(56,189,248,.04);overflow:hidden">
+    <div style="padding:9px 11px;border-bottom:1px solid rgba(56,189,248,.15);
+         display:flex;align-items:center;justify-content:space-between">
+      <div style="font-size:12px;font-weight:700;color:var(--blue);
+           display:flex;align-items:center;gap:6px">
+        🎯 État Live
+        <span style="font-size:9px;color:var(--muted);font-weight:400">Mises à jour 800 ms</span>
+      </div>
+      <span class="conn-pill" id="el-mt5-pill"
+            style="font-size:8px;padding:2px 6px;border-radius:3px;
+                   border:1px solid var(--dim);color:var(--muted)">MT5</span>
+    </div>
+
+    <!-- Position XAUUSD principale -->
+    <div id="el-xau-section" style="padding:8px 11px;border-bottom:1px solid rgba(255,255,255,.04)">
+      <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:4px">
+        <span style="font-size:9px;color:var(--muted);letter-spacing:.1em;text-transform:uppercase">
+          XAUUSD position</span>
+        <span id="el-xau-dir"
+              style="font-size:10px;font-weight:700;padding:1px 6px;border-radius:3px;
+                     background:rgba(255,255,255,.06);color:var(--muted)">—</span>
+      </div>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px;font-size:10px">
+        <div>
+          <div style="font-size:7px;color:var(--muted);text-transform:uppercase">Entrée</div>
+          <div style="font-weight:700;font-variant-numeric:tabular-nums" id="el-xau-open">—</div>
+        </div>
+        <div>
+          <div style="font-size:7px;color:var(--muted);text-transform:uppercase">P&L</div>
+          <div style="font-weight:700;font-variant-numeric:tabular-nums" id="el-xau-pnl">—</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Swing Learner v2 -->
+    <div style="padding:8px 11px;display:grid;grid-template-columns:1fr 1fr 1fr;gap:6px">
+      <div style="text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">Sims</div>
+        <div style="font-size:13px;font-weight:700;color:var(--purple);font-variant-numeric:tabular-nums"
+             id="el-learn-sims">0</div>
+      </div>
+      <div style="text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">WR test</div>
+        <div style="font-size:13px;font-weight:700;font-variant-numeric:tabular-nums"
+             id="el-learn-wr">—%</div>
+      </div>
+      <div style="text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">Fitness</div>
+        <div style="font-size:13px;font-weight:700;color:var(--teal);font-variant-numeric:tabular-nums"
+             id="el-learn-fit">—</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Session -->
+  <div class="sess-bar">
+    <div class="sec" style="padding:0 0 5px;border:none">Session
+      <span class="sbadge" id="sl-sess-name">—</span>
+    </div>
+    <div class="sess-track" id="sl-track"></div>
+    <div class="sess-labels"><span>00h</span><span>06h</span><span>12h</span>
+      <span>18h</span><span>24h</span></div>
+    <div class="sess-info">
+      <div class="sess-name-big" id="sl-sess-agg">—</div>
+      <div class="sess-chips">
+        <div class="sc2">Lot <b id="sl-sess-lot">×1.0</b></div>
+        <div class="sc2">Scan <b id="sl-sess-scan">30s</b></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Symboles -->
+  <div class="sec">Symboles <span class="sbadge" id="sym-n">0</span></div>
+  <div class="sym-hdr">
+    <span>Paire</span><span>Prix</span><span>Chg%</span>
+    <span>Régime</span><span>ATR</span><span>MTF</span>
+  </div>
+  <div id="sym-list"></div>
+
+  <!-- Risk Gauge -->
+  <div class="rg">
+    <div class="rg-top">
+      <div class="rg-lbl">Exposition risque</div>
+      <div class="rg-val" id="rg-val">0%</div>
+    </div>
+    <div class="rg-track"><div class="rg-fill" id="rg-fill" style="width:0%"></div></div>
+    <div class="rg-marks"><span>0%</span><span>2.5%</span><span>5%</span>
+      <span>7.5%</span><span>10%</span></div>
+  </div>
+
+  <!-- Contrôles -->
+  <div class="sec">Contrôles</div>
+  <div class="action-grid">
+    <button class="abtn abtn-ok"   onclick="doResume()">▶ Reprendre</button>
+    <button class="abtn abtn-info" onclick="doReset()">↺ Reset état</button>
+    <button class="abtn abtn-warn"
+      onclick="confirm2('Fermer TOUTES les positions ?',closeAll)">✕ Clore tout</button>
+    <button class="abtn abtn-info" onclick="window.open('/api/health')">🔍 Health</button>
+    <button class="abtn-kill"
+      onclick="confirm2('Activer le KILL SWITCH ?',doKill)">⛔ KILL SWITCH</button>
+  </div>
+
+</div><!-- end left -->
+
+<!-- ═══ COLONNE CENTRALE ════════════════════════════════ -->
+<div class="main">
+
+  <!-- P&L Hero -->
+  <div class="pnl-hero" id="pnl-hero">
+    <div style="font-size:7px;color:var(--muted);text-transform:uppercase;
+      letter-spacing:.2em;margin-bottom:2px">P&L Flottant</div>
+    <div class="pnl-amount" id="pnl-amount" style="color:var(--green)">$0.00</div>
+    <div class="pnl-row">
+      <div class="pchip">Fermé: <b id="pnl-closed">$0.00</b></div>
+      <div class="pchip">DD: <b id="pnl-dd">0.0%</b></div>
+      <div class="pchip">Pos: <b id="pnl-pos">0</b></div>
+      <div class="pchip">Trades/j: <b id="pnl-trades">0</b></div>
+      <div class="pchip">Qualité: <b id="pnl-quality">—/100</b></div>
+    </div>
+  </div>
+
+  <!-- Brain Panel -->
+  <div class="bp bp-NORMAL" id="bp">
+    <div class="bp-hdr">
+      <div>
+        <div class="bp-state" id="bp-state">⚖️ NORMAL</div>
+        <div class="bp-desc"  id="bp-desc">Paramètres standards</div>
+      </div>
+      <div style="text-align:right">
+        <div style="font-size:7px;color:var(--muted)">Score min</div>
+        <div class="bp-score-big" id="bp-score">45</div>
+      </div>
+    </div>
+    <div class="bp-metrics">
+      <div class="bpm"><div class="bpm-l">Lot×</div><div class="bpm-v" id="bm-lot">1.00</div></div>
+      <div class="bpm"><div class="bpm-l">TP×</div> <div class="bpm-v" id="bm-tp">1.00</div></div>
+      <div class="bpm"><div class="bpm-l">SL×</div> <div class="bpm-v" id="bm-sl">1.00</div></div>
+      <div class="bpm"><div class="bpm-l">CD</div>   <div class="bpm-v" id="bm-cd">5min</div></div>
+      <div class="bpm"><div class="bpm-l">WR10</div> <div class="bpm-v" id="bm-wr">—</div></div>
+      <div class="bpm"><div class="bpm-l">DD%</div>  <div class="bpm-v" id="bm-dd">0%</div></div>
+    </div>
+  </div>
+
+  <!-- TABS -->
+  <div class="tabs">
+    <button class="tab on" onclick="tab(this,'t-signals')">Signaux</button>
+    <button class="tab"    onclick="tab(this,'t-positions')">Positions</button>
+    <button class="tab"    onclick="tab(this,'t-curve')">Graphique (Live)</button>
+    <button class="tab"    onclick="tab(this,'t-equity')">Solde (Équité)</button>
+    <button class="tab"    onclick="tab(this,'t-logs')">Terminal</button>
+  </div>
+
+  <!-- Signaux -->
+  <div class="tc on" id="t-signals">
+    <div class="sec">Signaux actifs <span class="sbadge" id="sig-n">0</span></div>
+    <div id="sig-list"><div class="sig-empty">Scan en cours...</div></div>
+  </div>
+
+  <!-- Positions -->
+  <div class="tc" id="t-positions">
+    <!-- SMC Action Panel -->
+  <div class="sec" style="margin-top:10px;">⚡ SMC Action <span id="smc-hr-pill" style="float:right;font-size:8px;padding:2px 5px;border-radius:3px;background:rgba(255,255,255,0.05);color:var(--muted)">HR: —</span></div>
+  <div class="card" style="margin-bottom:10px">
+    <div class="ci" style="display:flex; justify-content:space-between; align-items:center; border-bottom:1px solid rgba(255,255,255,0.05); padding-bottom:8px; margin-bottom:8px">
+      <div id="smc-action-badge" style="padding:4px 8px; border-radius:4px; font-weight:bold; font-size:10px; background:rgba(255,255,255,0.05); color:var(--muted)">WAIT</div>
+      <button id="smc-auto-toggle" onclick="smcToggleAutoTrade()" style="padding:4px 8px; border-radius:4px; border:1px solid rgba(255,255,255,0.1); background:none; color:var(--muted); cursor:pointer; font-size:8px; font-weight:bold">AUTO OFF</button>
+    </div>
+    <div class="ci" style="font-size:9px; color:var(--white); margin-bottom:4px" id="smc-action-detail">Aucune action recommandée pour le moment.</div>
+    <div class="ci" style="font-size:8px; color:var(--muted); margin-bottom:8px" id="smc-action-reasons">—</div>
+    <div class="ci" style="display:flex; gap:5px; align-items:center;">
+      <button id="smc-take-now-btn" onclick="smcTakeNow()" style="flex:1; padding:6px; border-radius:4px; border:1px solid rgba(0,229,160,0.5); background:rgba(0,229,160,0.1); color:var(--green); cursor:pointer; font-size:9px; font-weight:bold; outline:none">⚡ Prendre</button>
+      <span id="smc-take-feedback" style="font-size:8px; color:var(--muted)"></span>
+    </div>
+  </div>
+  
+  <!-- Pro Zones & Multi-Setups -->
+  <div class="sec">🎯 Pro Zones <span id="pro-zones-summary" style="float:right;font-size:8px;color:var(--muted)">aucune zone</span></div>
+  <div class="card" style="margin-bottom:10px"><div class="ci" id="pro-zones-list" style="max-height:150px; overflow-y:auto"></div></div>
+
+  <div class="sec">🔥 Multi Setups <span id="multi-setups-count" style="float:right;font-size:8px;color:var(--muted)">0 actifs</span></div>
+  <div class="card" style="margin-bottom:10px"><div class="ci" id="multi-setups-list" style="max-height:150px; overflow-y:auto"></div></div>
+
+  <div class="sec">Positions ouvertes <span class="sbadge" id="pos-n">0</span></div>
+    <div class="pos-hdr">
+      <span>Symbol</span><span>Dir</span><span>Lot</span>
+      <span class="tr">Entrée</span><span class="tr">Actuel</span>
+      <span class="tr">P&L</span><span>Strat</span><span></span>
+    </div>
+    <div id="pos-list"><div class="pos-empty">Aucune position ouverte</div></div>
+  </div>
+
+  <!-- Courbe : Chart MTF + Équité -->
+  <div class="tc" id="t-curve">
+
+    <!-- Chart Multi-Timeframe -->
+    <!-- CHART PANEL — À INTÉGRER DANS LE DASHBOARD -->
+<!-- Ce bloc remplace ou complète le tab "Courbe" existant -->
+
+<style>
+/* ═══ CHART PANEL ══════════════════════════════════════ */
+.chart-panel{background:#0c0d14;border:1px solid rgba(56,189,248,.16);
+  border-radius:8px;margin:5px 8px;overflow:hidden;box-shadow:inset 0 0 0 1px rgba(0,0,0,.35)}
+.chart-panel-hdr{
+  display:flex;align-items:center;justify-content:space-between;
+  padding:8px 12px;border-bottom:1px solid rgba(255,255,255,.05);
+  background:rgba(0,0,0,.3)
+}
+.chart-panel-title{font-size:10px;font-weight:700;color:var(--white);letter-spacing:.08em}
+
+/* TF selector */
+.tf-tabs{display:flex;gap:3px}
+.tf-tab{
+  padding:3px 8px;border-radius:3px;border:1px solid var(--dim);
+  font-size:8px;font-weight:700;cursor:pointer;font-family:var(--fn);
+  color:var(--muted);background:none;transition:all .15s
+}
+.tf-tab.on{background:rgba(30,144,255,.15);color:var(--blue);border-color:rgba(30,144,255,.3)}
+.tf-tab:hover:not(.on){color:var(--white)}
+
+/* Symbol selector */
+.sym-tabs{display:flex;gap:3px}
+.sym-tab{
+  padding:3px 8px;border-radius:3px;border:1px solid var(--dim);
+  font-size:8px;font-weight:700;cursor:pointer;font-family:var(--fn);
+  color:var(--muted);background:none;transition:all .15s
+}
+.sym-tab.on{background:rgba(255,107,53,.1);color:var(--orange);border-color:rgba(255,107,53,.3)}
+.sym-tab:hover:not(.on){color:var(--white)}
+
+/* Indicateurs toggles */
+.ind-toggles{display:flex;gap:4px;flex-wrap:wrap;padding:5px 12px;
+  border-bottom:1px solid rgba(255,255,255,.04)}
+.ind-toggle{
+  padding:2px 7px;border-radius:3px;border:1px solid var(--dim);
+  font-size:7px;font-weight:700;cursor:pointer;font-family:var(--fn);
+  color:var(--muted);background:none;transition:all .15s
+}
+.ind-toggle.on{background:rgba(0,229,160,.08);color:var(--green);border-color:rgba(0,229,160,.2)}
+
+/* Canvas zone */
+.chart-canvas-wrap{position:relative;background:#0c0d14;background-image:radial-gradient(rgba(255,255,255,.035) 1px, transparent 1px);background-size:12px 12px}
+#chart-main{display:block;width:100%}
+#chart-volume{display:block;width:100%;border-top:1px solid rgba(255,255,255,.04)}
+
+/* Crosshair info */
+.chart-crosshair{
+  position:absolute;top:8px;left:12px;
+  background:rgba(0,0,0,.8);border:1px solid rgba(255,255,255,.1);
+  border-radius:5px;padding:5px 10px;font-size:9px;
+  font-family:var(--fn);pointer-events:none;z-index:10;
+  display:none
+}
+.ch-row{display:flex;gap:8px;align-items:center}
+.ch-lbl{color:var(--muted);font-size:7px}
+.ch-val{color:var(--white);font-weight:700}
+
+/* Level labels */
+.chart-levels-panel{
+  display:grid;grid-template-columns:1fr 1fr;gap:4px;
+  padding:6px 12px;border-top:1px solid rgba(255,255,255,.04);
+  font-size:8px
+}
+.lvl-item{display:flex;justify-content:space-between;align-items:center}
+.lvl-lbl{color:var(--muted);font-size:7px;text-transform:uppercase;letter-spacing:.1em}
+.lvl-val{font-weight:700;font-variant-numeric:tabular-nums}
+
+/* Stats bar */
+.chart-stats-bar{
+  display:flex;gap:12px;padding:5px 12px;
+  border-top:1px solid rgba(255,255,255,.04);font-size:8px
+}
+.cs-item{color:var(--muted)}.cs-item b{color:var(--white)}
+
+/* Cache info */
+.cache-pill{
+  font-size:7px;padding:2px 6px;border-radius:3px;
+  background:rgba(0,229,160,.08);color:var(--green);border:1px solid rgba(0,229,160,.15)
+}
+.cache-pill.stale{background:rgba(255,184,0,.08);color:var(--amber);border-color:rgba(255,184,0,.2)}
+
+/* Contrôles bars */
+.bars-ctrl{display:flex;align-items:center;gap:5px;font-size:8px;color:var(--muted)}
+.bars-input{
+  width:42px;background:var(--bg3);border:1px solid var(--dim);
+  border-radius:3px;color:var(--white);padding:2px 4px;
+  font-family:var(--fn);font-size:8px;text-align:center
+}
+</style>
+
+<!-- ═══ CHART PANEL HTML ════════════════════════════════════ -->
+<div class="chart-panel" id="mtf-chart-panel">
+
+  <!-- Header -->
+  <div class="chart-panel-hdr">
+    <div style="display:flex;align-items:center;gap:10px">
+      <div class="chart-panel-title">📊 Multi-Timeframe Chart</div>
+      <!-- Symbole -->
+      <div class="sym-tabs" id="chart-sym-tabs">
+        <button class="sym-tab on" onclick="chartSetSym('XAUUSD',this)">XAU</button>
+        <button class="sym-tab" onclick="chartSetSym('BTCUSD',this)">BTC</button>
+        <button class="sym-tab" onclick="chartSetSym('NAS100',this)">NAS</button>
+      </div>
+    </div>
+    <div style="display:flex;align-items:center;gap:8px">
+      <!-- Bars selector -->
+      <div class="bars-ctrl">
+        Bougies: <input type="number" class="bars-input" id="chart-bars" value="60" min="50" max="500" step="50" onchange="chartLoad()">
+        <span id="chart-live-badge" style="margin-left:8px;padding:2px 7px;border-radius:3px;
+          background:rgba(0,229,160,.06);color:var(--green);font-size:8px;font-weight:700;
+          letter-spacing:.06em;transition:background .15s">⚡ LIVE 300ms</span>
+        <button id="chart-compact-btn" onclick="toggleCompactMode()" style="margin-left:6px;
+          padding:3px 8px;border-radius:3px;border:1px solid rgba(56,189,248,.4);
+          color:var(--blue);background:rgba(56,189,248,.06);cursor:pointer;
+          font-family:var(--fn);font-size:8px;font-weight:700">🎨 Compact</button>
+        <button onclick="chartApplyPreset('clean')" title="Vue lisible: Plan ICT + Volume"
+          style="padding:3px 7px;border-radius:3px;border:1px solid rgba(0,229,160,.35);color:var(--green);background:rgba(0,229,160,.05);cursor:pointer;font-family:var(--fn);font-size:8px;font-weight:700">Clean</button>
+        <button onclick="chartApplyPreset('smc')" title="Vue SMC: OB/FVG/Sweeps/BOS en plus"
+          style="padding:3px 7px;border-radius:3px;border:1px solid rgba(155,89,232,.35);color:var(--purple);background:rgba(155,89,232,.05);cursor:pointer;font-family:var(--fn);font-size:8px;font-weight:700">SMC</button>
+        <button onclick="chartApplyPreset('full')" title="Tout afficher"
+          style="padding:3px 7px;border-radius:3px;border:1px solid rgba(255,184,0,.35);color:var(--amber);background:rgba(255,184,0,.05);cursor:pointer;font-family:var(--fn);font-size:8px;font-weight:700">Full</button>
+        
+      </div>
+      <!-- TF -->
+      <div class="tf-tabs" id="chart-tf-tabs">
+        <button class="tf-tab on" onclick="chartSetTF('M1',this)">M1</button>
+        <button class="tf-tab" onclick="chartSetTF('M5',this)">M5</button>
+        <button class="tf-tab" onclick="chartSetTF('M15',this)">M15</button>
+        <button class="tf-tab" onclick="chartSetTF('M30',this)">M30</button>
+        <button class="tf-tab" onclick="chartSetTF('H1',this)">H1</button>
+        <button class="tf-tab" onclick="chartSetTF('H4',this)" style="border-color:rgba(155,89,232,.4);color:var(--purple)">H4</button>
+        <button class="tf-tab" onclick="chartSetTF('D1',this)" style="border-color:rgba(155,89,232,.5);color:var(--purple);font-weight:700">D1</button>
+        <button class="tf-tab" onclick="chartSetTF('W1',this)" style="border-color:rgba(255,107,53,.5);color:var(--orange);font-weight:700">W1</button>
+        <button class="tf-tab" onclick="chartSetTF('MN1',this)" style="border-color:rgba(255,184,0,.5);color:var(--amber);font-weight:700">MN</button>
+      </div>
+      <!-- Cache info -->
+      <div class="cache-pill" id="chart-cache-badge">LIVE</div>
+      <!-- Refresh -->
+      <button style="font-size:8px;padding:2px 7px;border-radius:3px;border:1px solid var(--dim);
+        color:var(--muted);background:none;cursor:pointer" onclick="chartLoad()">↻</button>
+    </div>
+  </div>
+
+  <!-- Indicateurs toggles -->
+  <div class="ind-toggles">
+    <span style="font-size:7px;color:var(--muted);margin-right:3px;text-transform:uppercase;letter-spacing:.1em">Indicateurs:</span>    <button class="ind-toggle"  id="ind-levels"  onclick="chartToggleInd('levels',this)">Niveaux</button>
+    <button class="ind-toggle"  id="ind-pivots"  onclick="chartToggleInd('pivots',this)">Pivots</button>
+    <span style="width:1px;height:12px;background:var(--dim);margin:0 3px"></span>
+    <!-- 🎯 SMC toggles -->
+    <button class="ind-toggle" style="border-color:rgba(155,89,232,.4);color:var(--purple)"
+            id="ind-pdhpdl" onclick="chartToggleInd('pdhpdl',this)" title="Previous Day High/Low (D1)">PDH/PDL</button>
+    <button class="ind-toggle" style="border-color:rgba(255,184,0,.4);color:var(--amber)"
+            id="ind-asia"   onclick="chartToggleInd('asia',this)"   title="Asia Range 00-08 UTC (H1)">Asia</button>
+    <button class="ind-toggle" style="border-color:rgba(255,107,53,.4);color:var(--orange)"
+            id="ind-sweeps" onclick="chartToggleInd('sweeps',this)" title="Liquidity Sweeps (M5)">Sweeps</button>
+    <button class="ind-toggle" style="border-color:rgba(56,189,248,.4);color:var(--blue)"
+            id="ind-fvg"    onclick="chartToggleInd('fvg',this)"    title="Fair Value Gaps (TF actuel)">FVG</button>
+    <button class="ind-toggle" style="border-color:rgba(0,229,160,.4);color:var(--green)"
+            id="ind-ob"     onclick="chartToggleInd('ob',this)"     title="Order Blocks (TF actuel)">OB</button>
+    <button class="ind-toggle on" style="border-color:rgba(255,61,90,.4);color:var(--red)"
+            id="ind-be"     onclick="chartToggleInd('be',this)"     title="Break-Even sur positions ouvertes">BE</button>
+    <!-- 🎯 ICT FULL toggles -->
+    <button class="ind-toggle" style="border-color:rgba(255,107,53,.5);color:var(--orange)"
+            id="ind-fibo"   onclick="chartToggleInd('fibo',this)"   title="Fibonacci levels 0/23.6/38.2/50/61.8/78.6/100">Fibo</button>
+    <button class="ind-toggle" style="border-color:rgba(255,107,53,.5);color:var(--orange)"
+            id="ind-ote"    onclick="chartToggleInd('ote',this)"    title="OTE Zone (Fibo 62-79%) + niveau 78.6">OTE</button>
+    <button class="ind-toggle on" style="border-color:rgba(155,89,232,.4);color:var(--purple)"
+            id="ind-bos"    onclick="chartToggleInd('bos',this)"    title="Break of Structure + CHoCH">BOS/CHoCH</button>
+    <button class="ind-toggle" style="border-color:rgba(255,184,0,.4);color:var(--amber)"
+            id="ind-bpr"    onclick="chartToggleInd('bpr',this)"    title="Balanced Price Range (FVG bull+bear overlap)">BPR</button>
+    <button class="ind-toggle on" style="border-color:rgba(56,189,248,.4);color:var(--blue)"
+            id="ind-phase"  onclick="chartToggleInd('phase',this)"  title="Wyckoff phase: Accumulation/Manipulation/Distribution">Phase</button>
+    <button class="ind-toggle" style="border-color:rgba(0,229,160,.4);color:var(--green)"
+            id="ind-zones"  onclick="chartToggleInd('zones',this)"  title="BUY ZONE / SELL ZONE prédites">Zones</button>
+    <button class="ind-toggle on" style="border-color:rgba(0,229,160,.55);color:var(--teal)"
+            id="ind-plan"   onclick="chartToggleInd('plan',this)"   title="Plan ICT complet: AMD, entrée, SL, TP, POI">Plan ICT</button>
+    <span style="width:1px;height:12px;background:var(--dim);margin:0 3px"></span>    <button class="ind-toggle on"  id="ind-vol"     onclick="chartToggleInd('vol',this)">Volume</button>
+    <button class="ind-toggle"     id="ind-atr"     onclick="chartToggleInd('atr',this)">ATR</button>
+  </div>
+
+  <!-- Canvas principal -->
+  <div class="chart-canvas-wrap" id="chart-wrap">
+    <div class="chart-crosshair" id="chart-crosshair">
+      <div class="ch-row">
+        <span class="ch-lbl">Prix</span><span class="ch-val" id="ch-price">—</span>
+        <span class="ch-lbl">O</span><span class="ch-val" id="ch-open">—</span>
+        <span class="ch-lbl">H</span><span class="ch-val green" id="ch-high">—</span>
+        <span class="ch-lbl">L</span><span class="ch-val red" id="ch-low">—</span>
+        <span class="ch-lbl">C</span><span class="ch-val" id="ch-close">—</span>
+        <span class="ch-lbl">Vol</span><span class="ch-val muted" id="ch-vol">—</span>
+      </div>
+      <div class="ch-row" style="margin-top:3px">
+        <span class="ch-lbl">Date</span><span class="ch-val muted" id="ch-time">—</span>        <span class="ch-lbl">ATR</span><span class="ch-val muted" id="ch-atr">—</span>
+      </div>
+    </div>
+    <canvas id="chart-main" height="560"></canvas>    <canvas id="chart-volume" height="45"></canvas>
+
+
+
+
+    </div>
+  </div>
+
+  <!-- Niveaux clés -->
+  <div class="chart-levels-panel">
+    <div class="lvl-item">
+      <span class="lvl-lbl">Swing High</span>
+      <span class="lvl-val red" id="lvl-sh">—</span>
+    </div>
+    <div class="lvl-item">
+      <span class="lvl-lbl">Swing Low</span>
+      <span class="lvl-val green" id="lvl-sl2">—</span>
+    </div>
+    <div class="lvl-item">
+      <span class="lvl-lbl">EMA 20</span>
+      <span class="lvl-val blue" id="lvl-e20">—</span>
+    </div>
+    <div class="lvl-item">
+      <span class="lvl-lbl">EMA 50</span>
+      <span class="lvl-val amber" id="lvl-e50">—</span>
+    </div>
+  </div>
+
+  <!-- Stats -->
+  <div class="chart-stats-bar">
+    <div class="cs-item">ATR: <b id="chart-atr-val">—</b></div>    <div class="cs-item">Cache: <b id="chart-cache-age">—</b></div>
+    <div class="cs-item" id="chart-trend-info" style="margin-left:auto"></div>
+  </div>
+
+
+      <!-- 📊 Panneau Performance par Session -->
+      <div id="session-perf-panel"
+           style="margin-top:6px;padding:7px 9px;border-radius:5px;
+                  background:rgba(255,184,0,.05);border:1px solid rgba(255,184,0,.25);
+                  font-size:9px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+          <b style="color:var(--amber);font-size:10px">📊 Perf par Session</b>
+          <span id="session-perf-current" style="font-size:8px;padding:1px 6px;
+                background:rgba(255,184,0,.15);color:var(--amber);border-radius:3px;font-weight:700">—</span>
+        </div>
+        <!-- Session stats: London / Overlap / NY -->
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:4px">
+          <div style="background:var(--bg3);border-radius:3px;padding:4px;text-align:center">
+            <div style="font-size:7px;color:var(--amber);font-weight:700">LONDON</div>
+            <div style="font-size:11px;font-weight:700" id="sp-london">—</div>
+            <div style="font-size:7px;color:var(--muted)" id="sp-london-wr">—</div>
+          </div>
+          <div style="background:var(--bg3);border-radius:3px;padding:4px;text-align:center">
+            <div style="font-size:7px;color:var(--green);font-weight:700">OVERLAP</div>
+            <div style="font-size:11px;font-weight:700" id="sp-overlap">—</div>
+            <div style="font-size:7px;color:var(--muted)" id="sp-overlap-wr">—</div>
+          </div>
+          <div style="background:var(--bg3);border-radius:3px;padding:4px;text-align:center">
+            <div style="font-size:7px;color:var(--blue);font-weight:700">NY</div>
+            <div style="font-size:11px;font-weight:700" id="sp-ny">—</div>
+            <div style="font-size:7px;color:var(--muted)" id="sp-ny-wr">—</div>
+          </div>
+        </div>
+        <div style="text-align:center;font-size:7px;color:var(--muted)" id="sp-total">—</div>
+        <div id="session-perf-list" style="display:grid;grid-template-columns:1fr 1fr;gap:3px;font-size:8px;margin-top:4px">
+        </div>
+      </div>
+
+      <!-- 🔮 Panneau Wyckoff / AMD Phase -->
+      <div style="margin-top:6px;padding:7px 9px;border-radius:5px;
+                  background:rgba(0,229,160,.04);border:1px solid rgba(0,229,160,.2);font-size:9px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <b style="color:var(--teal);font-size:10px">🔮 Wyckoff / AMD</b>
+          <span id="smc-phase-conf" style="font-size:8px;color:var(--muted)"></span>
+        </div>
+        <div style="font-size:14px;font-weight:700;text-align:center;margin:4px 0" id="smc-phase-name">—</div>
+        <div style="font-size:8px;color:var(--muted);text-align:center" id="smc-phase-detail"></div>
+      </div>
+
+      <!-- 🧾 Decision Layers -->
+      <div id="decision-layers-panel"
+           style="margin-top:6px;padding:7px 9px;border-radius:5px;
+                  background:rgba(56,189,248,.06);border:1px solid rgba(56,189,248,.22);font-size:9px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <b style="color:var(--blue);font-size:10px">🧾 Decision Layers</b>
+          <span id="dl-reason-badge" style="font-size:8px;padding:1px 6px;border-radius:3px;background:rgba(255,255,255,.06);color:var(--muted);font-weight:700">—</span>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:4px">
+          <div style="background:var(--bg3);border-radius:3px;padding:4px;text-align:center">
+            <div style="font-size:7px;color:var(--muted)">Detected</div>
+            <div id="dl-detected" style="font-size:11px;font-weight:700;color:var(--white)">—</div>
+          </div>
+          <div style="background:var(--bg3);border-radius:3px;padding:4px;text-align:center">
+            <div style="font-size:7px;color:var(--muted)">Confirmed</div>
+            <div id="dl-confirmed" style="font-size:11px;font-weight:700;color:var(--white)">—</div>
+          </div>
+          <div style="background:var(--bg3);border-radius:3px;padding:4px;text-align:center">
+            <div style="font-size:7px;color:var(--muted)">Executable</div>
+            <div id="dl-executable" style="font-size:11px;font-weight:700;color:var(--white)">—</div>
+          </div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:4px;font-size:8px">
+          <div style="background:rgba(255,255,255,.03);padding:4px;border-radius:3px">Core <b id="dl-core" style="color:var(--white)">—</b></div>
+          <div style="background:rgba(255,255,255,.03);padding:4px;border-radius:3px">Exec <b id="dl-exec-pen" style="color:var(--white)">—</b></div>
+        </div>
+        <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;font-size:8px;margin-bottom:4px">
+          <div style="background:rgba(255,255,255,.03);padding:4px;border-radius:3px">Direction <b id="dl-direction" style="color:var(--white)">—</b></div>
+          <div style="background:rgba(255,255,255,.03);padding:4px;border-radius:3px">Total <b id="dl-total" style="color:var(--white)">—</b></div>
+        </div>
+        <div id="dl-context" style="font-size:8px;color:var(--muted);line-height:1.45">—</div>
+      </div>
+
+      <!-- 🚫 Derniers refus -->
+      <div id="decision-rejects-panel"
+           style="margin-top:6px;padding:7px 9px;border-radius:5px;
+                  background:rgba(255,61,90,.05);border:1px solid rgba(255,61,90,.20);font-size:9px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <b style="color:var(--red);font-size:10px">🚫 Decision Rejects</b>
+          <span id="dl-reject-count" style="font-size:8px;color:var(--muted)">0</span>
+        </div>
+        <div id="decision-reject-list" style="display:flex;flex-direction:column;gap:4px;font-size:8px;color:var(--muted)">
+          <div>—</div>
+        </div>
+      </div>
+
+      <!-- 🌍 Panneau Macro HTF -->
+      <div id="htf-macro-panel"
+           style="margin-top:6px;padding:7px 9px;border-radius:5px;
+                  background:rgba(155,89,232,.06);border:1px solid rgba(155,89,232,.25);
+                  font-size:9px">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:4px">
+          <b style="color:var(--purple);font-size:10px">🌍 Macro HTF (H4 · D1 · W1 · MN)</b>
+          <span id="htf-bias-badge"
+                style="font-size:9px;padding:2px 8px;border-radius:3px;
+                       background:rgba(255,255,255,.06);color:var(--muted);font-weight:700">—</span>
+        </div>
+        <div id="htf-tfs-grid"
+             style="display:grid;grid-template-columns:repeat(4,1fr);gap:4px;margin-bottom:4px;font-size:8px">
+          <div style="text-align:center;padding:3px;background:rgba(0,0,0,.2);border-radius:3px">
+            <div style="color:var(--muted);font-size:7px">H4</div>
+            <div id="htf-h4-phase" style="font-weight:700;color:var(--white)">—</div>
+            <div id="htf-h4-range" style="color:var(--muted);font-size:7px">—</div>
+          </div>
+          <div style="text-align:center;padding:3px;background:rgba(0,0,0,.2);border-radius:3px">
+            <div style="color:var(--muted);font-size:7px">D1</div>
+            <div id="htf-d1-phase" style="font-weight:700;color:var(--white)">—</div>
+            <div id="htf-d1-range" style="color:var(--muted);font-size:7px">—</div>
+          </div>
+          <div style="text-align:center;padding:3px;background:rgba(0,0,0,.2);border-radius:3px">
+            <div style="color:var(--muted);font-size:7px">W1</div>
+            <div id="htf-w1-phase" style="font-weight:700;color:var(--white)">—</div>
+            <div id="htf-w1-range" style="color:var(--muted);font-size:7px">—</div>
+          </div>
+          <div style="text-align:center;padding:3px;background:rgba(0,0,0,.2);border-radius:3px">
+            <div style="color:var(--muted);font-size:7px">MN</div>
+            <div id="htf-mn-phase" style="font-weight:700;color:var(--white)">—</div>
+            <div id="htf-mn-range" style="color:var(--muted);font-size:7px">—</div>
+          </div>
+        </div>
+        <!-- Point d'entrée optimal -->
+        <div id="htf-entry-detail"
+             style="padding:5px;background:rgba(0,229,160,.06);border-left:3px solid var(--green);
+                    border-radius:3px;display:none">
+          <div style="font-size:9px"><b id="htf-entry-side">—</b>
+            @ <span id="htf-entry-price" style="color:var(--white)">—</span>
+            (conf <span id="htf-entry-conf">—</span>%)
+          </div>
+          <div style="font-size:8px;color:var(--muted);margin-top:2px">
+            SL <span id="htf-entry-sl" style="color:var(--red)">—</span> ·
+            <b style="color:var(--green)">TP1</b> <span id="htf-entry-tp1">—</span> (R<span id="htf-entry-rr1">—</span>) ·
+            <b style="color:var(--green)">TP2</b> <span id="htf-entry-tp2">—</span> (R<span id="htf-entry-rr2">—</span>)
+          </div>
+          <div id="htf-entry-reasons" style="font-size:8px;color:var(--muted);margin-top:3px"></div>
+        </div>
+      </div>
+
+
+
+<script src="apex_dashboard_chart.js"></script>
+  
+
+    </div>
+
+  <!-- Solde (Équité) -->
+  <div class="tc" id="t-equity">
+    <!-- Séparateur -->
+    <div style="margin:5px 8px;padding:5px 12px;font-size:7px;color:var(--muted);
+      text-transform:uppercase;letter-spacing:.2em;border-top:1px solid rgba(255,255,255,.04)">
+      Équité vs Balance
+    </div>
+
+    <!-- Courbe équité -->
+    <div class="chart-wrap">
+      <div class="chart-hdr">
+        <div class="chart-title">Équité vs Balance</div>
+        <div class="chart-legend">
+          <div class="cleg"><div class="cleg-line" style="background:var(--green)"></div>Équité</div>
+          <div class="cleg"><div class="cleg-line" style="background:var(--blue);opacity:.5"></div>Balance</div>
+        </div>
+      </div>
+      <canvas id="eq-chart" height="100" style="width:100%"></canvas>
+      <div class="chart-stats">
+        <div class="cs">Min: <b id="eq-min">—</b></div>
+        <div class="cs">Max: <b id="eq-max">—</b></div>
+        <div class="cs">Δ: <b id="eq-delta">—</b></div>
+        <div class="cs">Balance: <b id="eq-bal-now">—</b></div>
+        <div class="cs">Points: <b id="eq-pts">0</b></div>
+      </div>
+    </div>
+    <div class="stats-grid">
+      <div class="stat-cell"><div class="stat-lbl">Sharpe</div>
+        <div class="stat-val blue" id="st-sharpe">—</div></div>
+      <div class="stat-cell"><div class="stat-lbl">Profit Factor</div>
+        <div class="stat-val" id="st-pf">—</div></div>
+      <div class="stat-cell"><div class="stat-lbl">Expectancy</div>
+        <div class="stat-val" id="st-ev">—</div></div>
+      <div class="stat-cell"><div class="stat-lbl">Max Drawdown</div>
+        <div class="stat-val red" id="st-dd">—%</div></div>
+</div>
+  </div>
+
+  <!-- Terminal -->
+  <div class="tc" id="t-logs">
+    <div class="terminal">
+      <div class="term-hdr">
+        <div class="term-title">Terminal ApexBot v10 — Live SSE</div>
+        <div style="display:flex;gap:6px;align-items:center">
+          <select class="lf" id="log-sel" onchange="renderLogs(_logs)">
+            <option value="ALL">ALL</option>
+            <option value="SUCCESS">SUCCESS</option>
+            <option value="WARNING">WARNING</option>
+            <option value="ERROR">ERROR</option>
+            <option value="INFO">INFO</option>
+          </select>
+          <button class="btn-clr" onclick="document.getElementById('term-body').innerHTML=''">CLR</button>
+        </div>
+      </div>
+      <div class="term-body" id="term-body"></div>
+    </div>
+  </div>
+
+</div><!-- end main -->
+
+<!-- ═══ COLONNE DROITE ══════════════════════════════════ -->
+<div class="right">
+
+  <!-- Métriques -->
+  <div class="metrics-2">
+    <div class="mc">
+      <div class="mc-l">Win Rate</div>
+      <div class="mc-v" id="m-wr">0%</div>
+      <div class="mc-bar"><div class="mc-bf" id="m-wr-b" style="width:0%"></div></div>
+    </div>
+    <div class="mc">
+      <div class="mc-l">Score IA</div>
+      <div class="mc-v blue" id="m-score">50%</div>
+      <div class="mc-bar"><div class="mc-bf blue" id="m-score-b" style="width:50%"></div></div>
+    </div>
+    <div class="mc">
+      <div class="mc-l">Positions</div>
+      <div class="mc-v purple" id="m-pos">0/15</div>
+    </div>
+    <div class="mc">
+      <div class="mc-l">Drawdown</div>
+      <div class="mc-v" id="m-dd">0.0%</div>
+    </div>
+  </div>
+
+  <!-- Diagnostics avancés: IDs utilisés par le JS core -->
+  <div class="sec">🧠 Diagnostics moteur <span class="sbadge" id="last-upd">—</span></div>
+  <div class="card"><div class="ci">
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:8px">
+      <div style="background:var(--bg3);border-radius:4px;padding:6px;text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">Rankings</div>
+        <div style="font-size:12px;font-weight:700;color:var(--blue)" id="rank-n">0</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:4px;padding:6px;text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">Modules</div>
+        <div style="font-size:12px;font-weight:700;color:var(--purple)" id="modperf-count">0</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:4px;padding:6px;text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">Signal Flow</div>
+        <div style="font-size:12px;font-weight:700;color:var(--teal)" id="sigflow-count">0</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:6px">
+      <div style="background:var(--bg3);border-radius:4px;overflow:hidden;min-height:80px">
+        <div style="padding:5px 7px;font-size:7px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,.05)">Rank list</div>
+        <div id="rank-list"><div style="padding:6px 8px;font-size:8px;color:var(--muted)">En attente...</div></div>
+      </div>
+      <div style="background:var(--bg3);border-radius:4px;overflow:hidden;min-height:80px">
+        <div style="padding:5px 7px;font-size:7px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,.05)">Signal flow</div>
+        <div id="sigflow-list"><div style="padding:6px 8px;font-size:8px;color:var(--muted)">En attente...</div></div>
+      </div>
+      <div style="background:var(--bg3);border-radius:4px;overflow:hidden;min-height:80px">
+        <div style="padding:5px 7px;font-size:7px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,.05)">Modules <span id="modperf-count" style="float:right;color:var(--blue)">0</span></div>
+        <div id="module-perf-list"><div style="padding:6px 8px;font-size:8px;color:var(--muted)">En attente...</div></div>
+      </div>
+      <div style="background:var(--bg3);border-radius:4px;overflow:hidden;min-height:80px">
+        <div style="padding:5px 7px;font-size:7px;color:var(--muted);text-transform:uppercase;border-bottom:1px solid rgba(255,255,255,.05)">Profils <span id="profileperf-count" style="float:right;color:var(--purple)">0</span></div>
+        <div id="profile-perf-list"></div>
+        <div style="padding:5px 7px;font-size:7px;color:var(--muted);text-transform:uppercase;border-top:1px solid rgba(255,255,255,.05);border-bottom:1px solid rgba(255,255,255,.05)">Alternatifs (Shadow) <span id="altprof-count" style="float:right;color:var(--orange)">0</span></div>
+        <div id="alt-profile-list"><div style="padding:6px 8px;font-size:8px;color:var(--muted)">En attente...</div></div>
+      </div>
+    </div>
+    <div style="margin-top:8px;background:var(--bg3);border-radius:4px;overflow:hidden">
+      <div style="display:flex;justify-content:space-between;align-items:center;padding:5px 7px;border-bottom:1px solid rgba(255,255,255,.05)">
+        <span style="font-size:7px;color:var(--muted);text-transform:uppercase">Santé système / Besoins MT5</span>
+        <span class="sbadge" id="sys-health-badge">—</span>
+      </div>
+      <div id="sys-health-list" style="padding:6px 8px;font-size:8px;color:var(--muted)">Diagnostic en attente...</div>
+    </div>
+    <div id="learn-progress" style="display:none;margin-top:8px;height:4px;border-radius:4px;background:linear-gradient(90deg,var(--blue),var(--purple));box-shadow:0 0 12px rgba(30,144,255,.35)"></div>
+    <div style="display:none">
+      <button id="btn-learn"></button><span id="learn-wr"></span><span id="learn-signal-box"></span><span id="learn-progress-hidden"></span><span id="last-sig"></span>
+    </div>
+  </div></div>
+
+  <!-- Live Safety & Measurement -->
+  <div class="sec">🧯 Live Safety & Measurement <span class="sbadge" id="safe-global-badge">—</span></div>
+  <div class="card"><div class="ci">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px">
+      <div style="background:var(--bg3);border-radius:4px;padding:6px;text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">Global Day</div>
+        <div style="font-size:13px;font-weight:700" id="safe-global-pnl">—</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:4px;padding:6px;text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">Active Risk</div>
+        <div style="font-size:13px;font-weight:700;color:var(--teal)" id="safe-active-risk">—</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px">
+      <div style="background:var(--bg3);border-radius:4px;padding:6px;text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">Dernière sauvegarde</div>
+        <div style="font-size:11px;font-weight:700;color:var(--purple)" id="rest-saved-at">—</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:4px;padding:6px;text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">État restauré</div>
+        <div style="font-size:11px;font-weight:700" id="rest-loaded-ok">—</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:4px;padding:6px;text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">Trades</div>
+        <div style="font-size:11px;font-weight:700;color:var(--white)" id="rest-trade-count">0</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:4px;padding:6px;text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">Shadow</div>
+        <div style="font-size:11px;font-weight:700;color:var(--white)" id="rest-shadow-count">0</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:4px;padding:6px;text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">Learner</div>
+        <div style="font-size:11px;font-weight:700" id="rest-learner-ok">—</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:4px;padding:6px;text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">Baseline</div>
+        <div style="font-size:11px;font-weight:700" id="rest-baseline-ok">—</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px">
+      <input id="safe-global-reduce" placeholder="DD reduce %"
+        style="padding:5px 6px;border-radius:4px;border:1px solid var(--dim);background:rgba(0,0,0,.18);color:var(--white);font-family:var(--fn);font-size:7px;outline:none" />
+      <input id="safe-global-block" placeholder="DD block %"
+        style="padding:5px 6px;border-radius:4px;border:1px solid var(--dim);background:rgba(0,0,0,.18);color:var(--white);font-family:var(--fn);font-size:7px;outline:none" />
+      <input id="safe-loss-reduce" placeholder="Loss reduce"
+        style="padding:5px 6px;border-radius:4px;border:1px solid var(--dim);background:rgba(0,0,0,.18);color:var(--white);font-family:var(--fn);font-size:7px;outline:none" />
+      <input id="safe-micro-risk" placeholder="Micro risk x"
+        style="padding:5px 6px;border-radius:4px;border:1px solid var(--dim);background:rgba(0,0,0,.18);color:var(--white);font-family:var(--fn);font-size:7px;outline:none" />
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px">
+      <label style="display:flex;align-items:center;gap:6px;font-size:8px;color:var(--muted)"><input id="mod-touch-entry" type="checkbox" /> Touch Entry</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:8px;color:var(--muted)"><input id="mod-m1-validation" type="checkbox" /> M1 Validation</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:8px;color:var(--muted)"><input id="mod-tp-guard" type="checkbox" /> TP Guard</label>
+      <label style="display:flex;align-items:center;gap:6px;font-size:8px;color:var(--muted)"><input id="mod-rr-guard" type="checkbox" /> RR Guard</label>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px">
+      <button id="prof-btn-AUTO" onclick="setStrategyProfile('AUTO')" style="padding:5px;border-radius:4px;border:1px solid var(--dim);background:none;color:var(--muted);cursor:pointer;font-family:var(--fn);font-size:7px;font-weight:700">AUTO</button>
+      <button id="prof-btn-CORE_ONLY" onclick="setStrategyProfile('CORE_ONLY')" style="padding:5px;border-radius:4px;border:1px solid var(--dim);background:none;color:var(--muted);cursor:pointer;font-family:var(--fn);font-size:7px;font-weight:700">CORE ONLY</button>
+      <button id="prof-btn-CORE_SAFE" onclick="setStrategyProfile('CORE_SAFE')" style="padding:5px;border-radius:4px;border:1px solid var(--dim);background:none;color:var(--muted);cursor:pointer;font-family:var(--fn);font-size:7px;font-weight:700">CORE+SAFE</button>
+      <button id="prof-btn-FULL" onclick="setStrategyProfile('FULL')" style="padding:5px;border-radius:4px;border:1px solid var(--dim);background:none;color:var(--muted);cursor:pointer;font-family:var(--fn);font-size:7px;font-weight:700">FULL</button>
+    </div>
+    <div id="profile-mode-detail" style="font-size:7px;color:var(--muted);margin-bottom:6px;padding:4px 6px;background:rgba(0,0,0,.14);border-radius:4px">—</div>
+    <div style="display:flex;gap:4px;margin-bottom:8px">
+      <button onclick="saveSafetyConfig()" style="flex:1;padding:5px;border-radius:4px;border:1px solid rgba(30,144,255,.35);background:rgba(30,144,255,.08);color:var(--blue);cursor:pointer;font-family:var(--fn);font-size:7px;font-weight:700">SAVE</button>
+      <button onclick="resetSafetyBaseline()" style="flex:1;padding:5px;border-radius:4px;border:1px solid rgba(255,184,0,.35);background:rgba(255,184,0,.08);color:var(--amber);cursor:pointer;font-family:var(--fn);font-size:7px;font-weight:700">RESET BASELINE</button>
+    </div>
+    <div id="safe-list">
+      <div style="padding:6px 8px;font-size:8px;color:var(--muted)">En attente...</div>
+    </div>
+  </div></div>
+
+  <!-- Post-Trade Analyzer -->
+  <div class="sec">🧠 Analyse Post-Trade <span class="sbadge" id="pt-badge">—</span></div>
+  <div class="card"><div class="ci">
+    <div id="pt-suggestions" style="margin-bottom:6px"></div>
+    <div style="font-size:6px;color:var(--dim);margin-bottom:3px;padding:0 2px">TOP PATTERNS — PERTES</div>
+    <div id="pt-loss-patterns"></div>
+    <div style="font-size:6px;color:var(--dim);margin:5px 0 3px 0;padding:0 2px">TOP PATTERNS — GAINS</div>
+    <div id="pt-win-patterns"></div>
+    <div style="font-size:6px;color:var(--dim);margin:5px 0 3px 0;padding:0 2px">DERNIERS TRADES ANALYSÉS</div>
+    <div id="pt-recent-trades"></div>
+  </div></div>
+
+  <!-- Protection / Debug SL -->
+  <div class="sec">🛡️ Protection / Debug SL <span class="sbadge" id="prot-mode-badge">BALANCED</span></div>  <div class="card"><div class="ci">
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px">
+      <div style="background:var(--bg3);border-radius:4px;padding:6px;text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">Mode</div>
+        <div style="font-size:13px;font-weight:700" id="prot-mode-name">BALANCED</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:4px;padding:6px;text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">Positions</div>
+        <div style="font-size:13px;font-weight:700;color:var(--teal)" id="prot-open-count">0</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:4px;padding:6px;text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">Trail</div>
+        <div style="font-size:13px;font-weight:700;color:var(--green)" id="prot-trail-total">0</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:4px;padding:6px;text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">M1 Struct</div>
+        <div style="font-size:13px;font-weight:700;color:var(--blue)" id="prot-struct-total">0</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:4px;padding:6px;text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">CHoCH Exit</div>
+        <div style="font-size:13px;font-weight:700;color:var(--orange)" id="prot-choch-total">0</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:4px;padding:6px;text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">Close Guard</div>
+        <div style="font-size:13px;font-weight:700;color:var(--amber)" id="prot-guard-total">0</div>
+      </div>
+    </div>
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:7px">
+      <button id="prot-btn-PRUDENT" onclick="protectionSetMode('PRUDENT')"
+        style="padding:5px;border-radius:4px;border:1px solid var(--dim);background:none;color:var(--muted);cursor:pointer;font-family:var(--fn);font-size:7px;font-weight:700">PRUDENT</button>
+      <button id="prot-btn-BALANCED" onclick="protectionSetMode('BALANCED')"
+        style="padding:5px;border-radius:4px;border:1px solid var(--dim);background:none;color:var(--muted);cursor:pointer;font-family:var(--fn);font-size:7px;font-weight:700">BALANCED</button>
+      <button id="prot-btn-AGGRESSIVE" onclick="protectionSetMode('AGGRESSIVE')"
+        style="padding:5px;border-radius:4px;border:1px solid var(--dim);background:none;color:var(--muted);cursor:pointer;font-family:var(--fn);font-size:7px;font-weight:700">AGGRESSIVE</button>
+      <button id="prot-btn-AUTO" onclick="protectionSetMode('AUTO')"
+        style="padding:5px;border-radius:4px;border:1px solid var(--dim);background:none;color:var(--muted);cursor:pointer;font-family:var(--fn);font-size:7px;font-weight:700">AUTO</button>
+    </div>
+    <div id="prot-mode-detail" style="font-size:7px;color:var(--muted);margin-bottom:6px;padding:4px 6px;background:rgba(0,0,0,.14);border-radius:4px">—</div>
+    <div style="display:flex;gap:4px;margin-bottom:6px">
+      <input id="prot-filter-symbol" oninput="protectionApplyFilters()" placeholder="Filtre symbole"
+        style="flex:1;padding:5px 6px;border-radius:4px;border:1px solid var(--dim);background:rgba(0,0,0,.18);color:var(--white);font-family:var(--fn);font-size:7px;outline:none" />
+      <input id="prot-filter-ticket" oninput="protectionApplyFilters()" placeholder="Ticket"
+        style="width:82px;padding:5px 6px;border-radius:4px;border:1px solid var(--dim);background:rgba(0,0,0,.18);color:var(--white);font-family:var(--fn);font-size:7px;outline:none" />
+    </div>
+    <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:5px">
+      <div style="font-size:8px;color:var(--muted)">Historique monitor filtré ticket / symbole</div>
+      <button onclick="protectionClearDebug()"
+        style="padding:3px 6px;border-radius:3px;border:1px solid var(--dim);background:none;color:var(--muted);cursor:pointer;font-family:var(--fn);font-size:7px;font-weight:700">CLR</button>
+    </div>
+    <div id="prot-debug-list" style="max-height:170px;overflow:auto;background:rgba(0,0,0,.18);border-radius:4px;padding:4px 0">
+      <div style="padding:6px 8px;font-size:8px;color:var(--muted)">En attente...</div>
+    </div>
+  </div></div>
+
+  <!-- Entry / SL / Protection Engine -->
+  <div class="sec">⚙️ Entry / SL / Protection Engine <span class="sbadge-p sbadge" id="eng-count">0</span></div>
+  <div class="card"><div class="ci">
+    <div id="engine-list">
+      <div style="padding:6px 8px;font-size:8px;color:var(--muted)">Aucune position active</div>
+    </div>
+  </div></div>
+
+
+  <!-- Panneau Apprentissage Swing Learner -->
+  <div class="sec">🧠 Apprentissage auto <span class="sbadge-p sbadge" id="learn-badge">OFF</span></div>
+  <div class="card"><div class="ci">
+    <!-- Stats par symbole -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:8px">
+      <div style="background:var(--bg3);border-radius:4px;padding:6px;text-align:center">
+        <div style="font-size:7px;color:var(--amber);text-transform:uppercase;font-weight:700">XAUUSD</div>
+        <div style="font-size:16px;font-weight:700" id="learn-wr-xau">—%</div>
+        <div style="font-size:7px;color:var(--muted)">WR Learner</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:4px;padding:6px;text-align:center">
+        <div style="font-size:7px;color:var(--blue);text-transform:uppercase;font-weight:700">BTCUSD</div>
+        <div style="font-size:16px;font-weight:700" id="learn-wr-btc">—%</div>
+        <div style="font-size:7px;color:var(--muted)">WR Learner</div>
+      </div>
+    </div>
+    <!-- Stats globales -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:4px;margin-bottom:8px">
+      <div style="background:var(--bg3);border-radius:4px;padding:5px;text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">Simulations</div>
+        <div style="font-size:12px;font-weight:700;color:var(--purple)" id="learn-sims">0</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:4px;padding:5px;text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">SL / TP XAU</div>
+        <div style="font-size:10px;font-weight:700;color:var(--white)" id="learn-sltp-xau">—</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:4px;padding:5px;text-align:center">
+        <div style="font-size:7px;color:var(--muted);text-transform:uppercase">SL / TP BTC</div>
+        <div style="font-size:10px;font-weight:700;color:var(--white)" id="learn-sltp-btc">—</div>
+      </div>
+    </div>
+    <!-- Auto-Optimizer Status -->
+    <div style="display:grid;grid-template-columns:1fr 1fr;gap:4px;margin-bottom:6px">
+      <div style="background:var(--bg3);border-radius:3px;padding:4px">
+        <div style="font-size:7px;color:var(--amber);font-weight:700">XAU AutoOpt</div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:11px;font-weight:700" id="ao-xau-wr">—%</span>
+          <span style="font-size:7px;color:var(--muted)" id="ao-xau-detail">—</span>
+        </div>
+        <div style="height:2px;background:var(--bg2);border-radius:1px;margin-top:2px">
+          <div style="height:2px;background:var(--amber);border-radius:1px;width:0%" id="ao-xau-bar"></div>
+        </div>
+        <div style="font-size:6px;color:var(--muted);margin-top:1px" id="ao-xau-buf">buf: —</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:3px;padding:4px">
+        <div style="font-size:7px;color:var(--blue);font-weight:700">BTC AutoOpt</div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:11px;font-weight:700" id="ao-btc-wr">—%</span>
+          <span style="font-size:7px;color:var(--muted)" id="ao-btc-detail">—</span>
+        </div>
+        <div style="height:2px;background:var(--bg2);border-radius:1px;margin-top:2px">
+          <div style="height:2px;background:var(--blue);border-radius:1px;width:0%" id="ao-btc-bar"></div>
+        </div>
+        <div style="font-size:6px;color:var(--muted);margin-top:1px" id="ao-btc-buf">buf: —</div>
+      </div>
+      <div style="background:var(--bg3);border-radius:3px;padding:4px">
+        <div style="font-size:7px;color:var(--teal);font-weight:700">NAS AutoOpt</div>
+        <div style="display:flex;justify-content:space-between;align-items:center">
+          <span style="font-size:11px;font-weight:700" id="ao-nas-wr">—%</span>
+          <span style="font-size:7px;color:var(--muted)" id="ao-nas-detail">—</span>
+        </div>
+        <div style="height:2px;background:var(--bg2);border-radius:1px;margin-top:2px">
+          <div style="height:2px;background:var(--teal);border-radius:1px;width:0%" id="ao-nas-bar"></div>
+        </div>
+        <div style="font-size:6px;color:var(--muted);margin-top:1px" id="ao-nas-buf">buf: —</div>
+      </div>
+    </div>
+    <!-- Learning Brain Decisions -->
+    <div style="font-size:8px;color:var(--muted);margin-bottom:3px" id="learn-brain-summary">—</div>
+    <div id="learn-brain-list" style="display:flex;flex-direction:column;gap:3px;margin-bottom:6px"></div>
+    <!-- Learned signals overview -->
+    <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:3px;margin-bottom:4px">
+      <div style="background:rgba(0,0,0,.2);border-radius:3px;padding:3px;text-align:center">
+        <div style="font-size:6px;color:var(--muted)">XAU signal</div>
+        <div style="font-size:8px;font-weight:700" id="ls-xau">—</div>
+      </div>
+      <div style="background:rgba(0,0,0,.2);border-radius:3px;padding:3px;text-align:center">
+        <div style="font-size:6px;color:var(--muted)">BTC signal</div>
+        <div style="font-size:8px;font-weight:700" id="ls-btc">—</div>
+      </div>
+      <div style="background:rgba(0,0,0,.2);border-radius:3px;padding:3px;text-align:center">
+        <div style="font-size:6px;color:var(--muted)">NAS signal</div>
+        <div style="font-size:8px;font-weight:700" id="ls-nas">—</div>
+      </div>
+    </div>
+    <!-- Params appris -->
+    <div id="learn-params-detail" style="font-size:7px;color:var(--muted);
+         margin-bottom:5px;text-align:center;font-family:var(--fn);
+         padding:3px;background:rgba(0,0,0,.2);border-radius:3px;display:block">
+      —
+    </div>
+    <!-- Boutons XAUUSD -->
+    <div style="display:flex;flex-direction:column;gap:4px">
+      <div style="font-size:7px;color:var(--amber);font-weight:700;text-transform:uppercase;margin-bottom:2px">XAUUSD</div>
+      <div style="display:flex;gap:4px">
+        <button onclick="runLearning('XAUUSD','M5',1200,12)"
+          style="flex:1;padding:5px;border-radius:4px;border:1px solid rgba(255,184,0,.35);
+          color:var(--amber);background:rgba(255,184,0,.08);cursor:pointer;
+          font-family:var(--fn);font-size:7px;font-weight:700">🧠 Entraînement XAU</button>
+        <button onclick="runBacktest('XAUUSD')"
+          style="flex:1;padding:5px;border-radius:4px;border:1px solid var(--dim);
+          color:var(--muted);background:none;cursor:pointer;
+          font-family:var(--fn);font-size:7px;font-weight:700">📊 Backtest XAU</button>
+      </div>
+      <!-- Boutons BTCUSD -->
+      <div style="font-size:7px;color:var(--blue);font-weight:700;text-transform:uppercase;margin-top:4px;margin-bottom:2px">BTCUSD</div>
+      <div style="display:flex;gap:4px">
+        <button onclick="runLearning('BTCUSD','M5',1200,12)"
+          style="flex:1;padding:5px;border-radius:4px;border:1px solid rgba(30,144,255,.35);
+          color:var(--blue);background:rgba(30,144,255,.08);cursor:pointer;
+          font-family:var(--fn);font-size:7px;font-weight:700">🧠 Entraînement BTC</button>
+        <button onclick="runBacktest('BTCUSD')"
+          style="flex:1;padding:5px;border-radius:4px;border:1px solid var(--dim);
+          color:var(--muted);background:none;cursor:pointer;
+          font-family:var(--fn);font-size:7px;font-weight:700">📊 Backtest BTC</button>
+      </div>
+      <!-- Reset -->
+      <button onclick="resetLearner()"
+        style="margin-top:4px;padding:4px;border-radius:4px;border:1px solid var(--dim);
+        color:var(--muted);background:none;cursor:pointer;
+        font-family:var(--fn);font-size:7px;font-weight:700">↺ Reset tout</button>
+    </div>
+    <div style="font-size:8px;color:var(--dim);margin-top:5px;text-align:center" id="learn-status">
+      Pas encore entraîné
+    </div>
+  </div></div>
+
+</div><!-- end right -->
+
+<!-- ═══ STATUS BAR ══════════════════════════════════════ -->
+<footer>
+  <div class="sb-dot" id="sb-dot" style="background:var(--dim)"></div>
+  <span id="sb-conn" class="muted">Déconnecté</span>
+  <div class="sb-sep"></div>
+  <span class="muted">Ctx: <b id="sb-ctx" style="color:var(--white)">—</b></span>
+  <div class="sb-sep"></div>
+  <span class="muted">Sess: <b id="sb-sess" style="color:var(--teal)">—</b></span>
+  <div class="sb-sep"></div>
+  <span class="muted">Brain: <b id="sb-brain" style="color:var(--blue)">—</b></span>
+  <div class="sb-sep"></div>
+  <div class="ticker-wrap">
+    <div class="ticker" id="ticker"></div>
+  </div>
+  <div class="sb-sep"></div>
+  <span style="color:var(--green);font-size:8px" id="sb-sse">⬤ SSE</span>
+</footer>
+
+</div><!-- end layout -->
+
+<script src="apex_dashboard_core.js"></script>
+
+
+
+</body>
+</html>
+

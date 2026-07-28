@@ -1,0 +1,24 @@
+# Bot SMC/ICT v2 — Requirements
+# Installation: pip install -r requirements.txt
+
+# Core
+pandas>=2.0
+numpy>=1.24
+
+# Broker adapters
+oandapyV20>=0.7        # OANDA REST API (forex, works on Linux/Mac/Windows)
+ccxt>=4.0              # Crypto exchanges (Binance, Bybit, etc.)
+
+# MetaTrader5 only works on Windows — install manually there:
+# pip install MetaTrader5
+
+# Web dashboard
+flask>=3.0             # Monitoring dashboard
+
+# Logging & utils
+python-dotenv>=1.0     # Environment config (.env)
+schedule>=1.2          # Task scheduling
+requests>=2.31         # HTTP client for broker APIs
+
+# Testing
+pytest>=8.0
